@@ -33,8 +33,12 @@ build/
 *.egg-info/
 *.egg
 
-# PyInstaller
-*.spec
+# PyInstaller (auto-generated spec files)
+# Note: scripts/exam.spec is explicitly tracked (see below)
+# *.spec
+
+# Exception: Keep the build configuration
+!scripts/exam.spec
 
 # === EXAM SYSTEM SPECIFICS ===
 
