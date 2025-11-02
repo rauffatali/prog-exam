@@ -7,10 +7,12 @@
 #   - Network access for initial dependency download (can be done offline with vendor/ directory)
 #
 # Usage:
-#   ./build_unix.sh [--clean] [--offline]
+#   ./build_unix.sh
+#   ./build_unix.sh --output /path/to/output
+#   ./build_unix.sh --clean --output ../deploy
 #
 # Output:
-#   exam - Single-file Unix executable (created in project root)
+#   exam - Single-file Unix executable (created in --output path, default: project root)
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
@@ -22,6 +24,7 @@ EXE_NAME="exam"
 BUILD_DIR="build"
 CLEAN=0
 OFFLINE=0
+OUTPUT_PATH="."
 
 # Colors for output
 RED='\033[0;31m'
@@ -42,9 +45,13 @@ while [[ $# -gt 0 ]]; do
             OFFLINE=1
             shift
             ;;
+        --output)
+            OUTPUT_PATH="$2"
+            shift 2
+            ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"
-            echo "Usage: $0 [--clean] [--offline]"
+            echo "Usage: $0 [--clean] [--offline] [--output PATH]"
             exit 1
             ;;
     esac
@@ -53,6 +60,15 @@ done
 echo -e "${CYAN}================================================${NC}"
 echo -e "${CYAN}  Offline Python Exam System - Unix Build${NC}"
 echo -e "${CYAN}================================================${NC}"
+echo ""
+
+# Resolve and create output directory
+OUTPUT_PATH=$(realpath -m "$OUTPUT_PATH")
+if [ ! -d "$OUTPUT_PATH" ]; then
+    mkdir -p "$OUTPUT_PATH"
+    echo -e "${GREEN}Created output directory: $OUTPUT_PATH${NC}"
+fi
+echo -e "${CYAN}Output directory: $OUTPUT_PATH${NC}"
 echo ""
 
 # Clean previous builds if requested
@@ -143,13 +159,13 @@ echo -e "  ${GRAY}Using PyInstaller: $PYINSTALLER_VERSION${NC}"
 # Build executable
 echo -e "${YELLOW}[5/6] Building executable with PyInstaller...${NC}"
 echo -e "  ${GRAY}This may take several minutes...${NC}"
-pyinstaller scripts/exam.spec --clean --distpath .
+pyinstaller scripts/exam.spec --clean --distpath "$OUTPUT_PATH"
 
 echo -e "  ${GREEN}- Build successful${NC}"
 
 # Verify output
 echo -e "${YELLOW}[6/6] Verifying build output...${NC}"
-EXE_PATH="./$EXE_NAME"
+EXE_PATH="$OUTPUT_PATH/$EXE_NAME"
 if [ -f "$EXE_PATH" ]; then
     EXE_SIZE=$(du -h "$EXE_PATH" | cut -f1)
     echo -e "  ${GREEN}- Executable created: $EXE_PATH${NC}"
@@ -179,8 +195,10 @@ echo ""
 echo -e "${GREEN}Executable location: $EXE_PATH${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo -e "  ${GRAY}1. Test the executable: ./exam --help${NC}"
-echo -e "  ${GRAY}2. Ensure banks/ directory is in the same folder as exam${NC}"
+echo -e "  ${GRAY}1. Test the executable: $EXE_PATH --help${NC}"
+echo -e "  ${GRAY}2. Copy banks/ directory to: $OUTPUT_PATH${NC}"
 echo -e "  ${GRAY}3. Deploy to exam machines${NC}"
+echo ""
+echo -e "${CYAN}TIP: The executable will find banks/ next to itself, so you can run it from anywhere!${NC}"
 echo ""
 

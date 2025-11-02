@@ -7,13 +7,16 @@
 #
 # Usage:
 #   .\build_windows.ps1
+#   .\build_windows.ps1 -OutputPath "C:\MyExams"
+#   .\build_windows.ps1 -Clean -OutputPath "..\deploy"
 #
 # Output:
-#   exam.exe - Single-file Windows executable (created in project root)
+#   exam.exe - Single-file Windows executable (created in OutputPath, default: project root)
 
 param(
     [switch]$Clean = $false,
-    [switch]$Offline = $false
+    [switch]$Offline = $false,
+    [string]$OutputPath = "."
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,6 +31,15 @@ $VENV_DIR = ".venv-build"
 $PYTHON_MIN_VERSION = "3.10"
 $EXE_NAME = "exam.exe"
 $BUILD_DIR = "build"
+
+# Resolve and create output directory
+$OutputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
+if (-not (Test-Path $OutputPath)) {
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+    Write-Host "Created output directory: $OutputPath" -ForegroundColor Green
+}
+Write-Host "Output directory: $OutputPath" -ForegroundColor Cyan
+Write-Host ""
 
 # Clean previous builds if requested
 if ($Clean) {
@@ -130,7 +142,7 @@ Write-Host "  Using PyInstaller: $pyinstallerVersion" -ForegroundColor Gray
 # Build executable
 Write-Host "[5/6] Building executable with PyInstaller..." -ForegroundColor Yellow
 Write-Host "  This may take several minutes..." -ForegroundColor Gray
-& pyinstaller scripts\exam.spec --clean --distpath .
+& pyinstaller scripts\exam.spec --clean --distpath $OutputPath
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  - Build successful" -ForegroundColor Green
@@ -141,7 +153,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # Verify output
 Write-Host "[6/6] Verifying build output..." -ForegroundColor Yellow
-$exePath = ".\$EXE_NAME"
+$exePath = Join-Path $OutputPath $EXE_NAME
 if (Test-Path $exePath) {
     $exeSize = (Get-Item $exePath).Length / 1MB
     Write-Host "  - Executable created: $exePath" -ForegroundColor Green
@@ -169,8 +181,10 @@ Write-Host ""
 Write-Host "Executable location: $exePath" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "  1. Test the executable: .\exam.exe --help" -ForegroundColor Gray
-Write-Host "  2. Ensure banks\ directory is in the same folder as exam.exe" -ForegroundColor Gray
+Write-Host "  1. Test the executable: $exePath --help" -ForegroundColor Gray
+Write-Host "  2. Copy banks\ directory to: $OutputPath" -ForegroundColor Gray
 Write-Host "  3. Deploy to exam machines" -ForegroundColor Gray
+Write-Host ""
+Write-Host "TIP: The executable will find banks\ next to itself, so you can run it from anywhere!" -ForegroundColor Cyan
 Write-Host ""
 

@@ -344,13 +344,23 @@ class ExamRunner:
         
         args = parser.parse_args()
         
-        # Set group and bank path
+        # Determine the executable/script directory
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable - banks/ should be next to .exe
+            exe_dir = Path(sys.executable).parent
+        else:
+            # Running as script - banks/ should be in project root
+            exe_dir = Path(__file__).parent.parent
+        
+        # Set group and bank path (relative to executable location)
         self.group = f"group{args.group}"
-        self.bank_path = Path("banks") / f"bank_group{args.group}.enc"
+        self.bank_path = exe_dir / "banks" / f"bank_group{args.group}.enc"
         
         # Check if bank file exists
         if not self.bank_path.exists():
             print(f"Error: Bank file '{self.bank_path}' not found.")
+            print(f"Expected location: {self.bank_path}")
+            print(f"Please ensure the 'banks' directory is in the same folder as the executable.")
             return 1
         
         # Get decryption key
