@@ -33,6 +33,10 @@ build/
 *.egg-info/
 *.egg
 
+# Built executables (created in project root by build scripts)
+exam.exe
+exam
+
 # PyInstaller (auto-generated spec files)
 # Note: scripts/exam.spec is explicitly tracked (see below)
 # *.spec

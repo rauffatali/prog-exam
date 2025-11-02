@@ -9,7 +9,7 @@
 #   .\build_windows.ps1
 #
 # Output:
-#   dist\exam.exe - Single-file Windows executable
+#   exam.exe - Single-file Windows executable (created in project root)
 
 param(
     [switch]$Clean = $false,
@@ -26,24 +26,37 @@ Write-Host ""
 # Configuration
 $VENV_DIR = ".venv-build"
 $PYTHON_MIN_VERSION = "3.10"
-$DIST_DIR = "./"
+$EXE_NAME = "exam.exe"
 $BUILD_DIR = "build"
 
 # Clean previous builds if requested
 if ($Clean) {
     Write-Host "[1/6] Cleaning previous build artifacts..." -ForegroundColor Yellow
-    if (Test-Path $DIST_DIR) {
-        Remove-Item -Recurse -Force $DIST_DIR
-        Write-Host "  - Removed $DIST_DIR" -ForegroundColor Gray
+    
+    # Remove built executable
+    if (Test-Path $EXE_NAME) {
+        Remove-Item -Force $EXE_NAME
+        Write-Host "  - Removed $EXE_NAME" -ForegroundColor Gray
     }
+    
+    # Remove old dist/ directory if it exists
+    if (Test-Path "dist") {
+        Remove-Item -Recurse -Force "dist"
+        Write-Host "  - Removed dist/" -ForegroundColor Gray
+    }
+    
+    # Remove build directory
     if (Test-Path $BUILD_DIR) {
         Remove-Item -Recurse -Force $BUILD_DIR
         Write-Host "  - Removed $BUILD_DIR" -ForegroundColor Gray
     }
+    
+    # Remove virtual environment
     if (Test-Path $VENV_DIR) {
         Remove-Item -Recurse -Force $VENV_DIR
         Write-Host "  - Removed $VENV_DIR" -ForegroundColor Gray
     }
+    
     Write-Host "  Clean complete." -ForegroundColor Green
 } else {
     Write-Host "[1/6] Skipping clean (use -Clean to remove old builds)" -ForegroundColor Gray
@@ -104,9 +117,9 @@ if ($Offline) {
         exit 1
     }
 } else {
-    & pip install --upgrade pip
-    & pip install -r requirements.txt
-    & pip install pyinstaller>=6.0.0
+    & python.exe -m pip install --upgrade pip
+    & python.exe -m pip install -r requirements.txt
+    & python.exe -m pip install pyinstaller>=6.0.0
     Write-Host "  - Installed from PyPI (online mode)" -ForegroundColor Green
 }
 
@@ -117,7 +130,7 @@ Write-Host "  Using PyInstaller: $pyinstallerVersion" -ForegroundColor Gray
 # Build executable
 Write-Host "[5/6] Building executable with PyInstaller..." -ForegroundColor Yellow
 Write-Host "  This may take several minutes..." -ForegroundColor Gray
-& pyinstaller scripts\exam.spec --clean
+& pyinstaller scripts\exam.spec --clean --distpath .
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  - Build successful" -ForegroundColor Green
@@ -128,7 +141,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # Verify output
 Write-Host "[6/6] Verifying build output..." -ForegroundColor Yellow
-$exePath = Join-Path $DIST_DIR "exam.exe"
+$exePath = ".\$EXE_NAME"
 if (Test-Path $exePath) {
     $exeSize = (Get-Item $exePath).Length / 1MB
     Write-Host "  - Executable created: $exePath" -ForegroundColor Green
@@ -156,7 +169,7 @@ Write-Host ""
 Write-Host "Executable location: $exePath" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "  1. Test the executable: .\dist\exam.exe --help" -ForegroundColor Gray
+Write-Host "  1. Test the executable: .\exam.exe --help" -ForegroundColor Gray
 Write-Host "  2. Ensure banks\ directory is in the same folder as exam.exe" -ForegroundColor Gray
 Write-Host "  3. Deploy to exam machines" -ForegroundColor Gray
 Write-Host ""

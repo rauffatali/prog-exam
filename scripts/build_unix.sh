@@ -10,7 +10,7 @@
 #   ./build_unix.sh [--clean] [--offline]
 #
 # Output:
-#   dist/exam - Single-file Unix executable
+#   exam - Single-file Unix executable (created in project root)
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
@@ -18,7 +18,7 @@ set -u  # Exit on undefined variable
 # Configuration
 VENV_DIR=".venv-build"
 PYTHON_MIN_VERSION="3.10"
-DIST_DIR="./"
+EXE_NAME="exam"
 BUILD_DIR="build"
 CLEAN=0
 OFFLINE=0
@@ -58,9 +58,19 @@ echo ""
 # Clean previous builds if requested
 if [ $CLEAN -eq 1 ]; then
     echo -e "${YELLOW}[1/6] Cleaning previous build artifacts...${NC}"
-    [ -d "$DIST_DIR" ] && rm -rf "$DIST_DIR" && echo -e "  ${GRAY}- Removed $DIST_DIR${NC}"
+    
+    # Remove built executable
+    [ -f "$EXE_NAME" ] && rm -f "$EXE_NAME" && echo -e "  ${GRAY}- Removed $EXE_NAME${NC}"
+    
+    # Remove old dist/ directory if it exists
+    [ -d "dist" ] && rm -rf "dist" && echo -e "  ${GRAY}- Removed dist/${NC}"
+    
+    # Remove build directory
     [ -d "$BUILD_DIR" ] && rm -rf "$BUILD_DIR" && echo -e "  ${GRAY}- Removed $BUILD_DIR${NC}"
+    
+    # Remove virtual environment
     [ -d "$VENV_DIR" ] && rm -rf "$VENV_DIR" && echo -e "  ${GRAY}- Removed $VENV_DIR${NC}"
+    
     echo -e "  ${GREEN}Clean complete.${NC}"
 else
     echo -e "${GRAY}[1/6] Skipping clean (use --clean to remove old builds)${NC}"
@@ -133,13 +143,13 @@ echo -e "  ${GRAY}Using PyInstaller: $PYINSTALLER_VERSION${NC}"
 # Build executable
 echo -e "${YELLOW}[5/6] Building executable with PyInstaller...${NC}"
 echo -e "  ${GRAY}This may take several minutes...${NC}"
-pyinstaller scripts/exam.spec --clean
+pyinstaller scripts/exam.spec --clean --distpath .
 
 echo -e "  ${GREEN}- Build successful${NC}"
 
 # Verify output
 echo -e "${YELLOW}[6/6] Verifying build output...${NC}"
-EXE_PATH="$DIST_DIR/exam"
+EXE_PATH="./$EXE_NAME"
 if [ -f "$EXE_PATH" ]; then
     EXE_SIZE=$(du -h "$EXE_PATH" | cut -f1)
     echo -e "  ${GREEN}- Executable created: $EXE_PATH${NC}"
@@ -169,7 +179,7 @@ echo ""
 echo -e "${GREEN}Executable location: $EXE_PATH${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
-echo -e "  ${GRAY}1. Test the executable: ./dist/exam --help${NC}"
+echo -e "  ${GRAY}1. Test the executable: ./exam --help${NC}"
 echo -e "  ${GRAY}2. Ensure banks/ directory is in the same folder as exam${NC}"
 echo -e "  ${GRAY}3. Deploy to exam machines${NC}"
 echo ""
