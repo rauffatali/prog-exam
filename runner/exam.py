@@ -12,11 +12,14 @@ import argparse
 import getpass
 import json
 import hashlib
+import base64
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional
 from zipfile import ZipFile, ZIP_DEFLATED
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from .models import Bank, Task
 from .grader import Grader
@@ -205,12 +208,23 @@ class ExamRunner:
         self.bank: Optional[Bank] = None
         self.session: Optional[ExamSession] = None
     
-    def load_bank(self, key: bytes) -> bool:
+    def derive_key_from_password(self, password: str, salt: bytes) -> bytes:
+        """Derive a Fernet key from a password using PBKDF2."""
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=480000,  # OWASP recommendation for 2024
+        )
+        key_material = kdf.derive(password.encode('utf-8'))
+        return base64.urlsafe_b64encode(key_material)
+    
+    def load_bank(self, key_input: str) -> bool:
         """
         Load and decrypt the question bank.
         
         Args:
-            key: Encryption key as bytes
+            key_input: Encryption key (as string - will be interpreted as password or key)
         
         Returns:
             True if successful, False otherwise
@@ -218,6 +232,23 @@ class ExamRunner:
         try:
             with open(self.bank_path, 'rb') as f:
                 encrypted_data = f.read()
+            
+            # Check if password-based encryption (has SALT prefix)
+            is_password_based = encrypted_data.startswith(b'SALT')
+            
+            if is_password_based:
+                # Extract salt and actual encrypted data
+                salt = encrypted_data[4:20]  # 4-byte prefix + 16-byte salt
+                encrypted_data = encrypted_data[20:]
+                
+                # Derive key from password
+                key = self.derive_key_from_password(key_input, salt)
+            else:
+                # Key file format - use input as-is (base64 encoded key)
+                try:
+                    key = key_input.encode('utf-8')
+                except:
+                    key = key_input
 
             fernet = Fernet(key)
             decrypted_data = fernet.decrypt(encrypted_data)
@@ -363,26 +394,26 @@ class ExamRunner:
             print(f"Please ensure the 'banks' directory is in the same folder as the executable.")
             return 1
         
-        # Get decryption key
+        # Get decryption key/password
         print("="*60)
         print("OFFLINE PYTHON EXAM SYSTEM")
         print("="*60)
         
         try:
-            key_input = getpass.getpass(f"Enter decryption key for Group {args.group}: ")
+            key_input = getpass.getpass(f"Enter decryption password for Group {args.group}: ")
             if not key_input:
-                print("Error: Key cannot be empty.")
+                print("Error: Password cannot be empty.")
                 return 1
             
-            # Strip whitespace and encode to bytes
-            key = key_input.strip().encode('utf-8')
+            # Strip whitespace
+            key_input = key_input.strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting.")
             return 1
         
         # Load bank
         print("\nLoading and decrypting question bank...")
-        if not self.load_bank(key):
+        if not self.load_bank(key_input):
             return 1
         
         print("✓ Bank loaded successfully.")
