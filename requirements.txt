@@ -1,0 +1,9 @@
+# Offline Python Exam System - Dependencies
+# For packaging with PyInstaller, use: pip install -r requirements.txt
+
+# Encryption/Decryption of question banks
+cryptography>=42.0.0,<44.0.0
+
+# For development and packaging only (not required at runtime for executables)
+# pyinstaller>=6.0.0
+

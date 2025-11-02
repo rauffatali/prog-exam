@@ -1,0 +1,76 @@
+# Offline Python Exam System — Git Ignore Rules
+
+# === CRITICAL: NEVER COMMIT KEYS OR PLAINTEXT BANKS ===
+
+# Encryption keys (*.key files contain sensitive cryptographic material)
+*.key
+
+# Plaintext question banks (must remain in private repository only)
+bank_group*.json
+!bank_group*_sample.json
+
+# Temporary/test banks
+*_sample.json
+*_test.json
+
+# === STANDARD PYTHON ===
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# PyInstaller
+*.spec
+
+# === EXAM SYSTEM SPECIFICS ===
+
+# plan and instructions
+plan-gem.md
+instructions.md
+
+# phase handoffs
+tools/HANDOFF.md
+tools/COMMAND_REFERENCE.md
+
+# Student working directories (if testing locally)
+*_StudentID_*/
+
+# Results and logs (if testing locally)
+results.txt
+session.log
+assignment.json
+
+# Test artifacts
+*.zip
+!readme.zip
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# OS-specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
