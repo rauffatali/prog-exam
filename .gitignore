@@ -51,8 +51,11 @@ exam
 plan-gem.md
 instructions.md
 
-# phase/change documentations
+# phase/change documentation
 documentations/
+
+# Student working directories (if testing locally)
+*_TP_EVAL/
 
 # Results and logs (if testing locally)
 results.txt

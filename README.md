@@ -1,7 +1,7 @@
 # Offline Python Exam System — Teacher Guide
 
-**Version:** 1.0  
-**Last Updated:** 2025-11-02  
+**Version:** 1.2  
+**Last Updated:** 2025-11-03  
 **Target Audience:** Exam Teachers and Technical Staff
 
 ---
@@ -10,19 +10,20 @@
 
 1. [System Overview](#system-overview)
 2. [Before Exam Day (Preparation)](#before-exam-day-preparation)
-3. [Day of Exam (Installation & Setup)](#day-of-exam-installation--setup)
-4. [Exam Start (Per Student)](#exam-start-per-student)
-5. [During Exam](#during-exam)
-6. [After Exam (Collection)](#after-exam-collection)
-7. [Troubleshooting](#troubleshooting)
-8. [Student Commands Reference](#student-commands-reference)
+3. [Exam Configuration (Optional)](#exam-configuration-optional)
+4. [Day of Exam (Installation & Setup)](#day-of-exam-installation--setup)
+5. [Exam Start (Per Student)](#exam-start-per-student)
+6. [During Exam](#during-exam)
+7. [After Exam (Collection)](#after-exam-collection)
+8. [Troubleshooting](#troubleshooting)
+9. [Student Commands Reference](#student-commands-reference)
 
 ---
 
 ## System Overview
 
 **What students will do:**
-- Type commands to view tasks (`q1`, `q2`, `q3`)
+- Type commands to view tasks (`q1`, `q2`, `q3`, ...)
 - Edit Python files in their preferred editor
 - Test their code (`test q1`)
 - Submit solutions (`submit q1`)
@@ -33,6 +34,7 @@
 - Decryption key (provided by coordinator)
 - Python 3.10+ with virtual environment
 - Exam runner application
+- **(Optional)** Exam configuration file (`exam_config.json`)
 
 ---
 
@@ -44,11 +46,17 @@
 - [ ] Encrypted question bank file (`bank_group1.enc` or `bank_group2.enc`)
 - [ ] Decryption key (Base64 string like `EE2GANWkqT...` OR password)
 - [ ] Exam system files (full `exam_system/` directory)
+- [ ] **(Optional)** Exam configuration file (`exam_config.json`)
 
 **Key security:**
 - Store key in password manager OR sealed envelope
 - **Never save key on student machines**
 - Use separate keys for Group 1 and Group 2
+
+**Configuration (Optional):**
+- If provided, `exam_config.json` customizes exam parameters
+- Controls number of questions, difficulty distribution, point weights
+- See [Exam Configuration](#exam-configuration-optional) section below
 
 ### Task 2: Test the System (One Machine)
 
@@ -68,6 +76,118 @@
    python tools\verify_bank.py --bank banks\bank_group1.enc --key-file GROUP1.key
    ```
    Expected: `[OK] Bank validation PASSED`
+
+---
+
+## Exam Configuration (Optional)
+
+Teachers can customize exam parameters using a configuration file.
+
+### What Can Be Configured
+
+- **Number of questions** per student (default: 3)
+- **Distribution of difficulty** (how many easy, medium, hard)
+- **Point weights** for each difficulty level (default: 5 points each)
+- **Maximum total points** for the exam (default: 15)
+
+### Creating a Configuration
+
+**Option 1: Use Interactive Tool (Recommended)**
+
+```powershell
+cd exam_system
+python tools\config_helper.py
+```
+
+Select option 1 (Create new configuration) and follow the prompts:
+```
+Total number of questions per student: 3
+
+Now specify how many of each difficulty (must sum to 3):
+  Easy questions: 1
+  Medium questions: 1
+  Hard questions: 1
+
+Now specify the point value for each difficulty level:
+  Points for each Easy question: 5
+  Points for each Medium question: 5
+  Points for each Hard question: 5
+
+Calculated maximum points: 15.0
+Is this correct? (y/n): y
+
+Save to exam_config.json? (y/n): y
+```
+
+**Option 2: Edit Manually**
+
+Edit `exam_config.json`:
+```json
+{
+  "total_questions": 3,
+  "easy_count": 1,
+  "medium_count": 1,
+  "hard_count": 1,
+  "easy_weight": 5.0,
+  "medium_weight": 5.0,
+  "hard_weight": 5.0,
+  "max_points": 15.0
+}
+```
+
+**Validation Rules:**
+1. Question counts must sum to total: `easy_count + medium_count + hard_count = total_questions`
+2. Weights must sum to max points: `(easy_count × easy_weight) + (medium_count × medium_weight) + (hard_count × hard_weight) = max_points`
+
+### Validating Configuration
+
+Before deploying, validate your configuration:
+```powershell
+python tools\config_helper.py
+# Choose option 2 (Validate existing configuration)
+```
+
+### Common Examples
+
+**Standard (Default):**
+```json
+{
+  "total_questions": 3,
+  "easy_count": 1, "medium_count": 1, "hard_count": 1,
+  "easy_weight": 5.0, "medium_weight": 5.0, "hard_weight": 5.0,
+  "max_points": 15.0
+}
+```
+
+**Weighted by Difficulty:**
+```json
+{
+  "total_questions": 3,
+  "easy_count": 1, "medium_count": 1, "hard_count": 1,
+  "easy_weight": 3.0, "medium_weight": 5.0, "hard_weight": 7.0,
+  "max_points": 15.0
+}
+```
+
+**5 Questions, 20 Points:**
+```json
+{
+  "total_questions": 5,
+  "easy_count": 2, "medium_count": 2, "hard_count": 1,
+  "easy_weight": 3.0, "medium_weight": 4.0, "hard_weight": 6.0,
+  "max_points": 20.0
+}
+```
+
+### Deploying with Configuration
+
+1. Create or obtain `exam_config.json`
+2. Place it in the same directory as the exam executable (or `main.py`)
+3. Deploy both together to student machines
+
+**If no configuration file is provided:** System uses default values (3 questions, 15 points, equal weights).
+
+**For more details:** See `documentations/TEACHER_CONFIG_GUIDE.md`
 
 ---
 
@@ -121,7 +241,8 @@ chmod +x scripts/build_unix.sh
 **Distribute to exam machines:**
 ```
 exam_system/
-├── exam.exe         ← Built executable (Windows)
+├── exam.exe            ← Built executable (Windows)
+├── exam_config.json    ← (Optional) Configuration file
 └── banks/
     ├── bank_group1.enc
     └── bank_group2.enc
@@ -132,6 +253,9 @@ exam_system/
 .\exam.exe --group 1
 ```
 No Python installation or virtual environment needed on student machines!
+
+**With custom configuration:**
+Place `exam_config.json` in the same directory as `exam.exe`. The system will automatically load it on startup.
 
 **Note:** Executable is ~15-25 MB. If size is a concern, use virtual environment method below.
 
@@ -258,10 +382,13 @@ All should return `True`.
    **Success:**
    ```
    ✓ Bank loaded successfully.
+   ✓ Config loaded: 3 questions (1E, 1M, 1H) = 15.0 pts
    
    STUDENT AUTHENTICATION
    Enter your first name: _
    ```
+   
+   **Note:** The config line shows exam parameters. If using custom configuration, verify the values are correct. If no config file is found, system uses defaults.
 
 3. **Leave machine ready for student**
 
@@ -290,6 +417,8 @@ exam> _
 
 Students can now type commands.
 
+**Note:** Number of assigned tasks matches configured `total_questions`. Default is 3 (q1, q2, q3), but can be more if using custom configuration.
+
 ### If Student Machine Needs Restart
 
 **If using executable:**
@@ -317,12 +446,14 @@ Then:
 ### Student Workflow
 
 **Students work independently:**
-1. Type `q1`, `q2`, or `q3` to view tasks
-2. Edit Python files (`q1.py`, `q2.py`, `q3.py`) in any text editor
+1. Type `q1`, `q2`, `q3`, etc. to view tasks (number depends on configuration)
+2. Edit Python files (`q1.py`, `q2.py`, `q3.py`, etc.) in any text editor
 3. Test code: `test q1`
 4. Submit solution: `submit q1`
 5. Check progress: `status`
 6. Finish exam: `finish` (creates ZIP file)
+
+**Note:** Default is 3 questions. If using custom configuration, students may have more questions (e.g., q1 through q5).
 
 **Files created per student:**
 ```
@@ -345,7 +476,8 @@ jane_doe_TP_EVAL/
 
 | Question | Answer |
 |----------|--------|
-| "How do I see my tasks?" | Type `q1`, `q2`, or `q3` |
+| "How do I see my tasks?" | Type `q1`, `q2`, `q3`, etc. (or type `help` to see list) |
+| "How many questions?" | Type `status` to see all questions |
 | "How do I test my code?" | Type `test q1` |
 | "Why are tests failing?" | Type `debug q1` to see detailed errors |
 | "How do I save?" | Type `submit q1` |
@@ -423,8 +555,11 @@ JANE_DOE_TP_EVAL.zip
 ├── algorithm.txt
 ├── q1.py
 ├── q2.py
-└── q3.py
+├── q3.py
+└── ... (additional qN.py files if using custom configuration)
 ```
+
+**Note:** Number of `.py` files depends on exam configuration (default: 3).
 
 ---
 
@@ -432,7 +567,7 @@ JANE_DOE_TP_EVAL.zip
 
 ### Using Debug Mode
 
-**NEW FEATURE:** Debug mode helps diagnose why tests fail, especially useful for cross-platform issues.
+Debug mode helps diagnose why tests fail, especially useful for cross-platform issues.
 
 **When to use:**
 - Code works on one machine but fails on another
@@ -602,7 +737,8 @@ Compress-Archive -Path * -DestinationPath ..\JANE_DOE_TP_EVAL.zip
 ═══════════════════════════════════════════════════
 
 VIEWING TASKS:
-  q1, q2, q3         Show your assigned tasks
+  q1, q2, q3, ...    Show your assigned tasks
+                     (Type 'help' to see how many questions)
 
 TESTING CODE:
   test q1            Run all tests for question 1
@@ -616,13 +752,13 @@ SUBMITTING:
   submit q3          Submit your solution for q3
 
 CHECKING PROGRESS:
-  status             Show your current scores
+  status             Show your current scores and all questions
 
 FINISHING:
   finish             Create final ZIP and exit
 
 HELP:
-  help               Show command list
+  help               Show command list with available questions
 
 DEBUGGING (Optional):
   debug q1           Show detailed errors and output comparison
@@ -630,13 +766,14 @@ DEBUGGING (Optional):
 
 ═══════════════════════════════════════════════════
 WORKFLOW:
-1. Type 'q1' to see your first task
-2. Edit the file 'q1.py' in any text editor
-3. Type 'test q1' to check your solution
-4. If tests fail, type 'debug q1' to see details
-5. Type 'submit q1' to save your work
-6. Repeat for q2 and q3
-7. Type 'finish' when done
+1. Type 'help' to see how many questions you have
+2. Type 'q1' to see your first task
+3. Edit the file 'q1.py' in any text editor
+4. Type 'test q1' to check your solution
+5. If tests fail, type 'debug q1' to see details
+6. Type 'submit q1' to save your work
+7. Repeat for all questions (q2, q3, etc.)
+8. Type 'finish' when done
 ═══════════════════════════════════════════════════
 
 IMPORTANT:
@@ -644,6 +781,7 @@ IMPORTANT:
 - Use any text editor (VS Code, Notepad, etc.)
 - Do NOT close the terminal window
 - Use 'debug' command to see detailed test errors
+- Type 'status' to see all your questions and scores
 - Raise your hand if you need help
 ═══════════════════════════════════════════════════
 ```
@@ -651,6 +789,20 @@ IMPORTANT:
 ---
 
 ## Quick Reference for Teachers
+
+### Create Exam Configuration (Optional)
+```powershell
+cd exam_system
+python tools\config_helper.py
+# Choose option 1, follow prompts
+```
+Output: `exam_config.json` (place next to executable)
+
+**Or validate existing config:**
+```powershell
+python tools\config_helper.py
+# Choose option 2
+```
 
 ### Build Executable (Before Exam - Optional)
 ```powershell
@@ -710,7 +862,8 @@ Then: Enter key → Student enters same name → resumes
 ---
 
 **For full technical documentation, see:**
-- `tools/README.md` — Bank management
+- `tools/README.md` — Bank management & config helper tool
+- `documentations/TEACHER_CONFIG_GUIDE.md` — Complete configuration guide
 - `banks/bank_schema.md` — Question bank format
 - `plan-gem.md` — System design
 - `runner/grader.py` — Grading implementation with debug support

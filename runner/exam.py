@@ -21,8 +21,9 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from .models import Bank, Task
+from .models import Bank, Task, ExamConfig
 from .grader import Grader
+from .config_loader import load_config
 
 
 class ExamSession:
@@ -34,7 +35,8 @@ class ExamSession:
         surname: str,
         group: str,
         bank: Bank,
-        work_dir: Path
+        work_dir: Path,
+        config: ExamConfig
     ):
         self.name = name
         self.surname = surname
@@ -42,16 +44,15 @@ class ExamSession:
         self.group = group
         self.bank = bank
         self.work_dir = work_dir
-        self.grader = Grader()
+        self.config = config
+        self.grader = Grader(config)
         
         # Assigned tasks (populated by deterministic assignment)
         self.assigned_tasks: Dict[str, Task] = {}  # qN -> Task
         
-        # Submission state
+        # Submission state - dynamic based on config
         self.submissions: Dict[str, Optional[Dict]] = {
-            "q1": None,
-            "q2": None,
-            "q3": None
+            f"q{i+1}": None for i in range(config.total_questions)
         }
         
         # Log file
@@ -113,7 +114,7 @@ class ExamSession:
                 if task_id in all_tasks:
                     self.assigned_tasks[qn] = all_tasks[task_id]
             
-            return len(self.assigned_tasks) == 3
+            return len(self.assigned_tasks) == self.config.total_questions
         
         except Exception:
             return False
@@ -126,13 +127,19 @@ class ExamSession:
                 total += sub.get("score", 0.0)
         return round(total, 2)
     
+    def get_max_score(self) -> float:
+        """Get the maximum possible score."""
+        return self.config.max_points
+    
     def generate_results_file(self):
         """Generate the human-readable results.txt file."""
         lines = []
         lines.append(f"Student: {self.student_name} | Group: {self.group} | Date: {datetime.now().strftime('%Y-%m-%d')}")
         lines.append(f"Assigned: {', '.join(task.id for task in self.assigned_tasks.values())}\n")
         
-        for qn in ["q1", "q2", "q3"]:
+        # Generate for all questions based on config
+        for i in range(self.config.total_questions):
+            qn = f"q{i+1}"
             task = self.assigned_tasks.get(qn)
             sub = self.submissions.get(qn)
             
@@ -145,9 +152,10 @@ class ExamSession:
                     passed = sub.get("passed", 0)
                     total = sub.get("total", 15)
                     sha256 = sub.get("code_sha256", "N/A")
+                    max_score = sub.get("max_score", 0.0)
                     
                     lines.append(f"  SUBMITTED @ {timestamp}")
-                    lines.append(f"  - Score: {score:.2f} ({passed}/{total} passed)")
+                    lines.append(f"  - Score: {score:.2f} / {max_score:.2f} ({passed}/{total} passed)")
                     
                     # List failed test numbers
                     results = sub.get("results", [])
@@ -161,7 +169,7 @@ class ExamSession:
                 
                 lines.append("")
         
-        lines.append(f"TOTAL SCORE: {self.get_total_score():.2f} / 15.00")
+        lines.append(f"TOTAL SCORE: {self.get_total_score():.2f} / {self.get_max_score():.2f}")
         
         with open(self.results_path, 'w', encoding='utf-8') as f:
             f.write("\n".join(lines))
@@ -184,9 +192,9 @@ class ExamSession:
             "algorithm.txt"
         ]
         
-        # Add qN.py files
-        for qn in ["q1", "q2", "q3"]:
-            code_file = f"{qn}.py"
+        # Add qN.py files dynamically based on config
+        for i in range(self.config.total_questions):
+            code_file = f"q{i+1}.py"
             if (self.work_dir / code_file).exists():
                 files_to_zip.append(code_file)
         
@@ -207,6 +215,7 @@ class ExamRunner:
         self.bank_path = bank_path
         self.bank: Optional[Bank] = None
         self.session: Optional[ExamSession] = None
+        self.config: Optional[ExamConfig] = None
     
     def derive_key_from_password(self, password: str, salt: bytes) -> bytes:
         """Derive a Fernet key from a password using PBKDF2."""
@@ -307,7 +316,8 @@ class ExamRunner:
                 surname=surname,
                 group=self.group,
                 bank=self.bank,
-                work_dir=work_dir
+                work_dir=work_dir,
+                config=self.config
             )
             
             # Try to load existing assignment or create new one
@@ -342,23 +352,36 @@ class ExamRunner:
             return False
     
     def assign_tasks(self):
-        """Deterministically assign one E/M/H task to the student."""
+        """Deterministically assign tasks based on config to the student."""
         # Seed based on name, surname and group
         exam_date = datetime.now().strftime("%Y-%m-%d")
         seed_string = f"{self.session.name.lower()}{self.session.surname.lower()}{self.group}{exam_date}"
         seed_hash = hashlib.sha256(seed_string.encode()).hexdigest()
         seed = int(seed_hash, 16)
         
-        # Use seed to select tasks
-        easy_idx = seed % len(self.bank.easy)
-        medium_idx = (seed // 1000) % len(self.bank.medium)
-        hard_idx = (seed // 1000000) % len(self.bank.hard)
+        # Build list of tasks to assign based on config
+        tasks_to_assign = []
         
-        self.session.assigned_tasks = {
-            "q1": self.bank.easy[easy_idx],
-            "q2": self.bank.medium[medium_idx],
-            "q3": self.bank.hard[hard_idx]
-        }
+        # Add easy tasks
+        for i in range(self.config.easy_count):
+            easy_idx = (seed + i) % len(self.bank.easy)
+            tasks_to_assign.append(("easy", self.bank.easy[easy_idx]))
+        
+        # Add medium tasks
+        for i in range(self.config.medium_count):
+            medium_idx = (seed // 1000 + i) % len(self.bank.medium)
+            tasks_to_assign.append(("medium", self.bank.medium[medium_idx]))
+        
+        # Add hard tasks
+        for i in range(self.config.hard_count):
+            hard_idx = (seed // 1000000 + i) % len(self.bank.hard)
+            tasks_to_assign.append(("hard", self.bank.hard[hard_idx]))
+        
+        # Assign to question numbers
+        self.session.assigned_tasks = {}
+        for i, (difficulty, task) in enumerate(tasks_to_assign):
+            qn = f"q{i+1}"
+            self.session.assigned_tasks[qn] = task
     
     def run(self):
         """Main application entry point."""
@@ -418,6 +441,14 @@ class ExamRunner:
         
         print("✓ Bank loaded successfully.")
         
+        # Load exam configuration
+        try:
+            self.config = load_config()
+            print(f"✓ Config loaded: {self.config.total_questions} questions ({self.config.easy_count}E, {self.config.medium_count}M, {self.config.hard_count}H) = {self.config.max_points} pts")
+        except ValueError as e:
+            print(f"Error loading configuration: {e}")
+            return 1
+        
         # Authenticate student
         if not self.authenticate_student():
             return 1
@@ -453,7 +484,7 @@ class ExamRunner:
                     self.cmd_finish()
                 elif command == 'help':
                     self.cmd_help()
-                elif command in ['q1', 'q2', 'q3']:
+                elif command in [f'q{i+1}' for i in range(self.session.config.total_questions)]:
                     self.cmd_show_question(command)
                 elif command == 'test':
                     if len(parts) < 2:
@@ -483,9 +514,12 @@ class ExamRunner:
     
     def cmd_help(self):
         """Display help message."""
-        help_text = """
+        # Generate question list dynamically
+        question_list = ", ".join([f"q{i+1}" for i in range(self.session.config.total_questions)])
+        
+        help_text = f"""
 Available commands:
-  q1, q2, q3       Show your assigned prompts.
+  {question_list}       Show your assigned prompts.
   test qN          Run hidden tests for question N (e.g., 'test q1').
   debug qN         Run tests with detailed error messages and output comparison.
   submit qN        Submit your code for question N.
@@ -604,8 +638,9 @@ Available commands:
     
     def cmd_test(self, qn: str):
         """Run tests for a question."""
-        if qn not in ['q1', 'q2', 'q3']:
-            print(f"Error: '{qn}' is not a valid question (use q1, q2, or q3).")
+        valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        if qn not in valid_questions:
+            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
             return
         
         task = self.session.assigned_tasks.get(qn)
@@ -637,8 +672,9 @@ Available commands:
     
     def cmd_debug(self, qn: str):
         """Run tests with detailed error output for debugging."""
-        if qn not in ['q1', 'q2', 'q3']:
-            print(f"Error: '{qn}' is not a valid question (use q1, q2, or q3).")
+        valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        if qn not in valid_questions:
+            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
             return
         
         task = self.session.assigned_tasks.get(qn)
@@ -667,8 +703,9 @@ Available commands:
     
     def cmd_submit(self, qn: str):
         """Submit code for a question."""
-        if qn not in ['q1', 'q2', 'q3']:
-            print(f"Error: '{qn}' is not a valid question (use q1, q2, or q3).")
+        valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        if qn not in valid_questions:
+            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
             return
         
         task = self.session.assigned_tasks.get(qn)
@@ -691,6 +728,9 @@ Available commands:
             code_bytes = f.read()
         code_sha256 = hashlib.sha256(code_bytes).hexdigest()
         
+        # Get max score for this task based on difficulty
+        max_score = results.get("max_score", 0.0)
+        
         # Store submission
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.session.submissions[qn] = {
@@ -698,12 +738,13 @@ Available commands:
             "score": results["score"],
             "passed": results["passed"],
             "total": results["total"],
+            "max_score": max_score,
             "results": results["results"],
             "code_sha256": code_sha256,
             "timestamp": timestamp
         }
         
-        print(f"Final test run: {results['passed']}/{results['total']} passed. Score: {results['score']:.2f}.")
+        print(f"Final test run: {results['passed']}/{results['total']} passed. Score: {results['score']:.2f} / {max_score:.2f}.")
         print("This result has been saved. You can submit again to overwrite.")
         print("Please ensure your approach is described in 'algorithm.txt'.")
         
@@ -719,26 +760,28 @@ Available commands:
         """Display submission status."""
         print(f"\nStatus for {self.session.student_name}:")
         
-        for qn in ["q1", "q2", "q3"]:
+        for i in range(self.session.config.total_questions):
+            qn = f"q{i+1}"
             task = self.session.assigned_tasks.get(qn)
             sub = self.session.submissions.get(qn)
             
             if task:
                 status_str = f"- {qn} ({task.id}): "
                 if sub:
-                    status_str += f"Submitted | Score: {sub['score']:.2f} ({sub['passed']}/{sub['total']})"
+                    max_score = sub.get('max_score', 0.0)
+                    status_str += f"Submitted | Score: {sub['score']:.2f} / {max_score:.2f} ({sub['passed']}/{sub['total']})"
                 else:
                     status_str += "Not submitted"
                 print(status_str)
         
-        print(f"\nTotal Score so far: {self.session.get_total_score():.2f} / 15.00")
+        print(f"\nTotal Score so far: {self.session.get_total_score():.2f} / {self.session.get_max_score():.2f}")
         print()
     
     def cmd_finish(self):
         """Finalize the exam and create submission package."""
         submitted_count = sum(1 for sub in self.session.submissions.values() if sub is not None)
         
-        print(f"\nYou have submissions for {submitted_count} out of 3 questions.")
+        print(f"\nYou have submissions for {submitted_count} out of {self.session.config.total_questions} questions.")
         
         try:
             confirm = input("Are you sure you want to finish and lock your work? (y/n): ").strip().lower()

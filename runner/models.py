@@ -127,3 +127,93 @@ class Bank:
         return tasks
 
 
+@dataclass
+class ExamConfig:
+    """
+    Configuration for exam parameters set by teacher.
+    
+    Attributes:
+        total_questions: Total number of questions per student
+        easy_count: Number of easy questions
+        medium_count: Number of medium questions
+        hard_count: Number of hard questions
+        easy_weight: Point value for each easy question
+        medium_weight: Point value for each medium question
+        hard_weight: Point value for each hard question
+        max_points: Maximum total points for the exam
+    """
+    total_questions: int
+    easy_count: int
+    medium_count: int
+    hard_count: int
+    easy_weight: float
+    medium_weight: float
+    hard_weight: float
+    max_points: float
+    
+    @staticmethod
+    def from_dict(data: dict) -> 'ExamConfig':
+        """Create ExamConfig from dictionary."""
+        return ExamConfig(
+            total_questions=data.get('total_questions', 3),
+            easy_count=data.get('easy_count', 1),
+            medium_count=data.get('medium_count', 1),
+            hard_count=data.get('hard_count', 1),
+            easy_weight=float(data.get('easy_weight', 5.0)),
+            medium_weight=float(data.get('medium_weight', 5.0)),
+            hard_weight=float(data.get('hard_weight', 5.0)),
+            max_points=float(data.get('max_points', 15.0))
+        )
+    
+    def validate(self) -> tuple[bool, str]:
+        """
+        Validate configuration consistency.
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # Check if question counts sum to total
+        if self.easy_count + self.medium_count + self.hard_count != self.total_questions:
+            return False, f"Question counts don't match: {self.easy_count} + {self.medium_count} + {self.hard_count} != {self.total_questions}"
+        
+        # Check if max points matches sum of weights
+        calculated_max = (self.easy_count * self.easy_weight + 
+                         self.medium_count * self.medium_weight + 
+                         self.hard_count * self.hard_weight)
+        
+        if abs(calculated_max - self.max_points) > 0.01:
+            return False, f"Max points ({self.max_points}) doesn't match calculated sum ({calculated_max})"
+        
+        # Check for non-negative values
+        if any(x < 0 for x in [self.total_questions, self.easy_count, self.medium_count, 
+                                self.hard_count, self.easy_weight, self.medium_weight, 
+                                self.hard_weight, self.max_points]):
+            return False, "All values must be non-negative"
+        
+        return True, ""
+    
+    def get_difficulty_weight(self, difficulty: str) -> float:
+        """Get the point value for a difficulty level."""
+        if difficulty.lower() == 'easy':
+            return self.easy_weight
+        elif difficulty.lower() == 'medium':
+            return self.medium_weight
+        elif difficulty.lower() == 'hard':
+            return self.hard_weight
+        return 0.0
+    
+    @staticmethod
+    def default() -> 'ExamConfig':
+        """Return default configuration (backward compatible with current system)."""
+        return ExamConfig(
+            total_questions=3,
+            easy_count=1,
+            medium_count=1,
+            hard_count=1,
+            easy_weight=5.0,
+            medium_weight=5.0,
+            hard_weight=5.0,
+            max_points=15.0
+        )
+
+

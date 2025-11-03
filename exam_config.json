@@ -1,0 +1,72 @@
+{
+  "total_questions": 3,
+  "easy_count": 1,
+  "medium_count": 1,
+  "hard_count": 1,
+  "easy_weight": 5.0,
+  "medium_weight": 5.0,
+  "hard_weight": 5.0,
+  "max_points": 15.0,
+
+  "_comment": "This is the default exam configuration. Adjust values as needed.",
+  
+  "_instructions": {
+    "total_questions": "Total number of questions per student",
+    "easy_count": "Number of easy difficulty questions",
+    "medium_count": "Number of medium difficulty questions",
+    "hard_count": "Number of hard difficulty questions",
+    "easy_weight": "Points awarded for each easy question",
+    "medium_weight": "Points awarded for each medium question",
+    "hard_weight": "Points awarded for each hard question",
+    "max_points": "Maximum total points (should equal sum of all weights)",
+    "note": "The counts must sum to total_questions, and the weights must sum to max_points"
+  },
+
+  "_examples": [
+    {
+      "description": "Standard exam: 3 questions, equal weights",
+      "total_questions": 3,
+      "easy_count": 1,
+      "medium_count": 1,
+      "hard_count": 1,
+      "easy_weight": 5.0,
+      "medium_weight": 5.0,
+      "hard_weight": 5.0,
+      "max_points": 15.0
+    },
+    {
+      "description": "Weighted exam: harder questions worth more",
+      "total_questions": 3,
+      "easy_count": 1,
+      "medium_count": 1,
+      "hard_count": 1,
+      "easy_weight": 3.0,
+      "medium_weight": 5.0,
+      "hard_weight": 7.0,
+      "max_points": 15.0
+    },
+    {
+      "description": "5-question exam with 20 total points",
+      "total_questions": 5,
+      "easy_count": 2,
+      "medium_count": 2,
+      "hard_count": 1,
+      "easy_weight": 3.0,
+      "medium_weight": 4.0,
+      "hard_weight": 6.0,
+      "max_points": 20.0
+    },
+    {
+      "description": "Exam with equal weights (all 4 points each)",
+      "total_questions": 4,
+      "easy_count": 1,
+      "medium_count": 2,
+      "hard_count": 1,
+      "easy_weight": 4.0,
+      "medium_weight": 4.0,
+      "hard_weight": 4.0,
+      "max_points": 16.0
+    }
+  ]
+}
+

@@ -7,6 +7,7 @@ Windows: Uses timeout parameter (wall-clock time only).
 """
 
 import sys
+import json
 import subprocess
 import platform
 import tempfile
@@ -25,7 +26,6 @@ def get_python_executable():
             python_path = shutil.which('python3')
         
         if python_path:
-            # Found system Python - use it without isolation flags for compatibility
             return python_path, ['-I', '-B']
         else:
             raise RuntimeError("Python executable not found. Please ensure Python is installed on the exam machines.")
@@ -193,8 +193,6 @@ except Exception as e:
         with open(wrapper_path, 'w', encoding='utf-8') as f:
             f.write(wrapper_code)
         
-        # Prepare input (args as JSON)
-        import json
         input_json = json.dumps(args)
         
         # Build command with appropriate Python executable
@@ -236,7 +234,6 @@ except Exception as e:
             
             # Parse result
             try:
-                import json
                 result_data = json.loads(stdout)
                 
                 if "error" in result_data:

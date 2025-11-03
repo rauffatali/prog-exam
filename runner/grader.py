@@ -10,15 +10,16 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple, Callable, Any
 
-from .models import Task
+from .models import Task, ExamConfig
 from .sandbox import run_code_stdin_stdout, run_code_function
 
 
 class Grader:
     """Handles test case execution and output validation."""
     
-    def __init__(self):
-        """Initialize grader with available checker functions."""
+    def __init__(self, config: ExamConfig):
+        """Initialize grader with available checker functions and exam config."""
+        self.config = config
         self.checkers: Dict[str, Callable] = {
             "exact_match": self._exact_match,
             "float_isclose": self._float_isclose,
@@ -86,6 +87,16 @@ class Grader:
     
     # ===== TEST EXECUTION =====
     
+    def get_task_difficulty(self, task: Task, bank) -> str:
+        """Determine the difficulty level of a task."""
+        if task in bank.easy:
+            return "easy"
+        elif task in bank.medium:
+            return "medium"
+        elif task in bank.hard:
+            return "hard"
+        return "unknown"
+    
     def grade_submission(
         self,
         task: Task,
@@ -102,7 +113,8 @@ class Grader:
             Dictionary containing:
             - passed: Number of passed test cases
             - total: Total number of test cases
-            - score: Calculated score (0.0 to 5.0)
+            - score: Calculated score based on task difficulty weight
+            - max_score: Maximum possible score for this task
             - results: List of individual test results
         """
         if not Path(code_path).exists():
@@ -110,6 +122,7 @@ class Grader:
                 "passed": 0,
                 "total": len(task.tests),
                 "score": 0.0,
+                "max_score": 0.0,
                 "results": [{"status": "file_not_found", "message": f"File '{code_path}' not found"}]
             }
         
@@ -134,14 +147,27 @@ class Grader:
         else:
             results = [{"status": "error", "message": f"Unknown I/O mode: {task.io.mode}"}]
         
-        # Calculate score: 5.0 * (passed / total)
+        # Determine difficulty from task ID prefix
+        difficulty = "medium"  # default
+        if task.id.startswith("E"):
+            difficulty = "easy"
+        elif task.id.startswith("M"):
+            difficulty = "medium"
+        elif task.id.startswith("H"):
+            difficulty = "hard"
+        
+        # Get max score for this task based on difficulty and config
+        max_score = self.config.get_difficulty_weight(difficulty)
+        
+        # Calculate score: max_score * (passed / total)
         total_tests = len(task.tests)
-        score = round(5.0 * (passed_count / total_tests), 2) if total_tests > 0 else 0.0
+        score = round(max_score * (passed_count / total_tests), 2) if total_tests > 0 else 0.0
         
         return {
             "passed": passed_count,
             "total": total_tests,
             "score": score,
+            "max_score": max_score,
             "results": results
         }
     

@@ -12,8 +12,10 @@
 | `build_bank.py` | Encrypt plaintext banks | After authoring tasks (key file OR password) |
 | `verify_bank.py` | Validate and test decrypt | During authoring + pre-deployment |
 | `rotate_key.py` | Re-encrypt with new key/password | Post-exam (before reuse) |
+| `config_helper.py` | Create/validate exam config | Before exam deployment (set parameters) |
 
-**NEW:** All tools now support **password-based encryption** in addition to key files!
+**NEW:** All tools now support **password-based encryption** in addition to key files!  
+**NEW:** `config_helper.py` tool for creating and validating teacher exam configurations!
 
 ---
 
@@ -215,6 +217,103 @@ python tools/rotate_key.py \
 - For key files: Generate new key with `keygen.py` first
 - Archive old key/password securely (for audit trail)
 - Verify decryption with new key/password after rotation
+
+---
+
+### 5. config_helper.py
+
+**Purpose:** Interactive tool to help teachers create and validate exam configuration files.
+
+**Usage:**
+```bash
+python tools/config_helper.py
+```
+
+**Features:**
+1. **Create new configuration** - Interactive prompts for all parameters
+2. **Validate existing configuration** - Check config file for errors
+3. **Show example configurations** - Display common config patterns
+4. **Save to file** - Write configuration to `exam_config.json`
+
+**Interactive Example:**
+```bash
+python tools/config_helper.py
+
+EXAM CONFIGURATION HELPER TOOL
+Options:
+  1. Create new configuration
+  2. Validate existing configuration
+  3. Show example configurations
+  4. Exit
+
+Enter your choice (1-4): 1
+
+Total number of questions per student: 3
+
+Now specify how many of each difficulty (must sum to 3):
+  Easy questions: 1
+  Medium questions: 1
+  Hard questions: 1
+
+Now specify the point value for each difficulty level:
+  Points for each Easy question: 5
+  Points for each Medium question: 5
+  Points for each Hard question: 5
+
+Calculated maximum points: 15.0
+Is this correct? (y/n): y
+
+Configuration created successfully!
+{
+  "total_questions": 3,
+  "easy_count": 1,
+  "medium_count": 1,
+  "hard_count": 1,
+  "easy_weight": 5.0,
+  "medium_weight": 5.0,
+  "hard_weight": 5.0,
+  "max_points": 15.0
+}
+
+Save to exam_config.json? (y/n): y
+
+✓ Configuration saved to: exam_config.json
+```
+
+**Validate Example:**
+```bash
+python tools/config_helper.py
+
+Enter your choice (1-4): 2
+
+Enter config file path (default: exam_config.json): 
+
+CONFIG VALIDATOR
+Validating: exam_config.json
+
+Configuration:
+  Total Questions: 3
+  Easy:   1 × 5.0 pts = 5.0 pts
+  Medium: 1 × 5.0 pts = 5.0 pts
+  Hard:   1 × 5.0 pts = 5.0 pts
+  Maximum Points: 15.0
+
+✓ Configuration is VALID!
+```
+
+**Validations Performed:**
+- Question counts sum to total_questions
+- Point weights sum to max_points
+- All values are non-negative
+- JSON syntax is valid
+
+**Output:**
+- Creates/validates `exam_config.json` in current directory
+- Config file will be automatically loaded by exam system
+
+**Note:** Place the `exam_config.json` file in the same directory as the exam executable for deployment.
+
+For detailed information about exam configuration, see: `../documentations/TEACHER_CONFIG_GUIDE.md`
 
 ---
 
