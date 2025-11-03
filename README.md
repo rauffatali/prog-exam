@@ -69,24 +69,9 @@
    ```
    Expected: `[OK] Bank validation PASSED`
 
-### Task 3: Prepare Room
-
-- [ ] Disable network on all student machines (Windows: Network Adapter Settings)
-- [ ] Set power settings to "Never sleep"
-- [ ] Synchronize clocks on all machines
-- [ ] Prepare USB drive for collecting ZIP files
-- [ ] Print student command reference cards (see end of document)
-
-### Task 4: Prepare Materials
-
-- [ ] Seating chart with student names
-- [ ] This guide (printed or accessible)
-- [ ] USB drive for ZIP collection
-- [ ] Backup machine (if available)
-
 ---
 
-## Building Executable (Optional - Before Exam)
+## Building Executable (Before Exam)
 
 **Alternative to virtual environment:** Build a single-file executable that students can run directly.
 
@@ -362,6 +347,7 @@ jane_doe_TP_EVAL/
 |----------|--------|
 | "How do I see my tasks?" | Type `q1`, `q2`, or `q3` |
 | "How do I test my code?" | Type `test q1` |
+| "Why are tests failing?" | Type `debug q1` to see detailed errors |
 | "How do I save?" | Type `submit q1` |
 | "What editor?" | Any text editor (VS Code, Notepad, etc.) |
 | "Can I resubmit?" | Yes, latest counts |
@@ -442,6 +428,66 @@ JANE_DOE_TP_EVAL.zip
 
 ---
 
+## Debugging Test Failures
+
+### Using Debug Mode
+
+**NEW FEATURE:** Debug mode helps diagnose why tests fail, especially useful for cross-platform issues.
+
+**When to use:**
+- Code works on one machine but fails on another
+- Need to see actual error messages
+- Want to understand why tests are failing
+
+**How to use:**
+
+**Method 1: Debug Command**
+```
+exam> debug q1
+```
+
+Shows:
+- Error messages (stderr) for runtime errors
+- Student's actual output vs expected output
+- Function arguments (for function-mode tests)
+- Full error details
+
+**Example output:**
+```
+Test # 1:  PASSED (3 ms)
+Test # 2:  FAILED (Wrong Answer)
+         Args: ['hello']
+         Your output: 6
+         Expected: 5
+Test # 3:  FAILED (Runtime Error)
+         Error: NameError: name 'result' is not defined
+```
+
+**Method 2: Environment Variable**
+
+Set `EXAM_DEBUG=1` to enable detailed output for all `test` commands:
+
+```powershell
+# Windows
+$env:EXAM_DEBUG = "1"
+.\exam.exe --group 1
+
+# Linux/macOS
+export EXAM_DEBUG=1
+python main.py --group 1
+```
+
+**Important Notes:**
+- Debug mode reveals test outputs - use only for practice/troubleshooting
+- For actual exams, use regular `test` command (keeps tests hidden)
+- Debug mode helps identify:
+  - Import errors from isolation flags
+  - Line ending differences (Windows vs Unix)
+  - Type mismatches
+  - Logic errors in student code
+
+---
+
 ## Troubleshooting
 
 ### Problem: Key Rejected
@@ -481,6 +527,28 @@ Do you want to resume your previous session? (y/n):
 **Fix:** Wait 2-5 seconds for timeout. System will show `FAILED (Timeout Error)`.
 
 **If frozen:** Press `Ctrl+C`, restart runner, student resumes.
+
+### Problem: Tests Fail on One Machine But Pass on Another
+
+**Symptom:** Same code passes tests on development machine but fails on exam machine.
+
+**Diagnosis:**
+1. Use debug mode to see actual errors:
+   ```
+   exam> debug q1
+   ```
+
+2. Common causes:
+   - **Import errors**: Code imports packages not available with isolation flags
+   - **Path issues**: Code uses absolute paths or wrong separators
+   - **Encoding**: Different character encoding between systems
+   - **Python version**: Different behavior between Python versions
+
+**Solutions:**
+- Check error messages in debug output
+- Ensure code uses only standard library
+- Use `Path` from `pathlib` for file paths
+- Test with isolation flags: `python -I -B -S -E -s your_code.py`
 
 ### Problem: ZIP Not Created
 
@@ -540,6 +608,7 @@ TESTING CODE:
   test q1            Run all tests for question 1
   test q2            Run all tests for question 2
   test q3            Run all tests for question 3
+  debug q1           Run tests with detailed error output (debugging)
 
 SUBMITTING:
   submit q1          Submit your solution for q1
@@ -555,20 +624,26 @@ FINISHING:
 HELP:
   help               Show command list
 
+DEBUGGING (Optional):
+  debug q1           Show detailed errors and output comparison
+                     (Use if you need to see why tests fail)
+
 ═══════════════════════════════════════════════════
 WORKFLOW:
 1. Type 'q1' to see your first task
 2. Edit the file 'q1.py' in any text editor
 3. Type 'test q1' to check your solution
-4. Type 'submit q1' to save your work
-5. Repeat for q2 and q3
-6. Type 'finish' when done
+4. If tests fail, type 'debug q1' to see details
+5. Type 'submit q1' to save your work
+6. Repeat for q2 and q3
+7. Type 'finish' when done
 ═══════════════════════════════════════════════════
 
 IMPORTANT:
 - You can submit multiple times (latest counts)
 - Use any text editor (VS Code, Notepad, etc.)
 - Do NOT close the terminal window
+- Use 'debug' command to see detailed test errors
 - Raise your hand if you need help
 ═══════════════════════════════════════════════════
 ```
@@ -638,5 +713,6 @@ Then: Enter key → Student enters same name → resumes
 - `tools/README.md` — Bank management
 - `banks/bank_schema.md` — Question bank format
 - `plan-gem.md` — System design
+- `runner/grader.py` — Grading implementation with debug support
 
 

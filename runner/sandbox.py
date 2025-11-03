@@ -15,15 +15,20 @@ from pathlib import Path
 from typing import Tuple
 
 # Get the Python interpreter to use
-# When frozen (PyInstaller), sys.executable points to the .exe, but Python is embedded
-# We need to handle this differently for subprocess calls
 def get_python_executable():
     """Get the appropriate Python executable path."""
     if getattr(sys, 'frozen', False):
         # Running as frozen executable (PyInstaller)
-        # In onefile mode, Python is embedded - sys.executable works but may have issues
-        # For maximum compatibility, use minimal isolation
-        return sys.executable, []  # No isolation flags when frozen
+        # sys.executable points to exam.exe, which is NOT a Python interpreter
+        python_path = shutil.which('python')
+        if not python_path:
+            python_path = shutil.which('python3')
+        
+        if python_path:
+            # Found system Python - use it without isolation flags for compatibility
+            return python_path, ['-I', '-B']
+        else:
+            raise RuntimeError("Python executable not found. Please ensure Python is installed on the exam machines.")
     else:
         # Running as normal Python script - use standard isolation
         # Isolation flags for Python interpreter

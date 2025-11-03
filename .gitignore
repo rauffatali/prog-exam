@@ -51,13 +51,8 @@ exam
 plan-gem.md
 instructions.md
 
-# phase handoffs
+# phase/change documentations
 documentations/
-tools/HANDOFF.md
-tools/COMMAND_REFERENCE.md
-
-# Student working directories (if testing locally)
-*_StudentID_*/
 
 # Results and logs (if testing locally)
 results.txt
