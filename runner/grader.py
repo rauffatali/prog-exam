@@ -190,12 +190,20 @@ class Grader:
             else:
                 result_status = "runtime_error"
             
-            results.append({
+            # Store diagnostic info for debugging
+            result_dict = {
                 "test_num": i,
                 "status": result_status,
                 "elapsed_ms": elapsed_ms,
                 "stderr": stderr if status != "success" else None
-            })
+            }
+            
+            # Add student output and expected for failed tests (for debugging)
+            if result_status == "failed":
+                result_dict["student_output"] = stdout
+                result_dict["expected_output"] = test_case.output
+            
+            results.append(result_dict)
         
         return passed_count, results
     
@@ -247,23 +255,33 @@ class Grader:
             else:
                 result_status = "runtime_error"
             
-            results.append({
+            # Store diagnostic info for debugging
+            result_dict = {
                 "test_num": i,
                 "status": result_status,
                 "elapsed_ms": elapsed_ms,
                 "error": error_msg if status != "success" else None
-            })
+            }
+            
+            # Add student output and expected for failed tests (for debugging)
+            if result_status == "failed":
+                result_dict["student_output"] = return_value
+                result_dict["expected_output"] = test_case.ret
+                result_dict["function_args"] = test_case.args
+            
+            results.append(result_dict)
         
         return passed_count, results
     
     # ===== UTILITY METHODS =====
     
-    def format_test_results(self, results: Dict[str, Any]) -> str:
+    def format_test_results(self, results: Dict[str, Any], show_details: bool = False) -> str:
         """
         Format test results for display to student.
         
         Args:
             results: Results dictionary from grade_submission
+            show_details: If True, show error messages and output comparison for failed tests
         
         Returns:
             Formatted string for terminal display
@@ -290,6 +308,29 @@ class Grader:
                 lines.append(f"Test #{test_num:2d}:  FAILED (Import Error)")
             else:
                 lines.append(f"Test #{test_num:2d}:  FAILED ({status})")
+            
+            # Show error details for debugging (always show for runtime errors)
+            if status != "passed" and show_details:
+                stderr = result.get('stderr')
+                error = result.get('error')
+                
+                if stderr and stderr.strip():
+                    lines.append(f"         Error: {stderr.strip()[:200]}")
+                if error and error.strip():
+                    lines.append(f"         Details: {error.strip()[:200]}")
+                
+                # Show output comparison for failed tests
+                if status == "failed":
+                    student_out = result.get('student_output')
+                    expected_out = result.get('expected_output')
+                    func_args = result.get('function_args')
+                    
+                    if func_args is not None:
+                        lines.append(f"         Args: {func_args}")
+                    if student_out is not None:
+                        lines.append(f"         Your output: {repr(student_out)[:100]}")
+                    if expected_out is not None:
+                        lines.append(f"         Expected: {repr(expected_out)[:100]}")
         
         lines.append(f"\nResult: {results['passed']} / {results['total']} tests passed.")
         lines.append("This is not your final score. Use 'submit qN' to record your result.")

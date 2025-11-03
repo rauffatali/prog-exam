@@ -17,22 +17,8 @@ import os
 import sys
 from pathlib import Path
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
 
-
-def derive_key_from_password(password: str, salt: bytes) -> bytes:
-    """Derive a Fernet key from a password using PBKDF2."""
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=480000,  # OWASP recommendation for 2024
-    )
-    # Derive key and encode as Fernet key (base64url)
-    key_material = kdf.derive(password.encode())
-    return base64.urlsafe_b64encode(key_material)
+from utils import derive_key_from_password
 
 
 def build_bank(in_file: str, out_file: str, key_file: str = None, use_password: bool = False) -> None:

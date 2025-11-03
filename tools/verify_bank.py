@@ -17,21 +17,8 @@ import getpass
 import json
 import sys
 from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
 
-
-def derive_key_from_password(password: str, salt: bytes) -> bytes:
-    """Derive a Fernet key from a password using PBKDF2."""
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=480000,
-    )
-    key_material = kdf.derive(password.encode())
-    return base64.urlsafe_b64encode(key_material)
+from utils import derive_key_from_password
 
 
 def verify_bank(bank_file: str, key_file: str = None, use_password: bool = False, verbose: bool = False) -> bool:

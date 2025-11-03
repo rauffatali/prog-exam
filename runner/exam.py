@@ -460,6 +460,11 @@ class ExamRunner:
                         print("Usage: test qN (e.g., 'test q1')")
                     else:
                         self.cmd_test(parts[1].lower())
+                elif command == 'debug':
+                    if len(parts) < 2:
+                        print("Usage: debug qN (e.g., 'debug q1')")
+                    else:
+                        self.cmd_debug(parts[1].lower())
                 elif command == 'submit':
                     if len(parts) < 2:
                         print("Usage: submit qN (e.g., 'submit q1')")
@@ -482,6 +487,7 @@ class ExamRunner:
 Available commands:
   q1, q2, q3       Show your assigned prompts.
   test qN          Run hidden tests for question N (e.g., 'test q1').
+  debug qN         Run tests with detailed error messages and output comparison.
   submit qN        Submit your code for question N.
   status           Show your current submission status and scores.
   finish           Finalize and package your submission.
@@ -617,12 +623,45 @@ Available commands:
         # Run grader
         results = self.session.grader.grade_submission(task, str(code_file))
         
+        # Check if debug mode is enabled via environment variable
+        show_details = os.environ.get('EXAM_DEBUG', '').lower() in ['1', 'true', 'yes']
+        
         # Format and display results
-        formatted_output = self.session.grader.format_test_results(results)
+        formatted_output = self.session.grader.format_test_results(results, show_details=show_details)
         print(formatted_output)
         
         # Log test results
         self.session.log("TEST_RESULT", f"Question: {qn}, Passed: {results['passed']}/{results['total']}")
+        
+        print()
+    
+    def cmd_debug(self, qn: str):
+        """Run tests with detailed error output for debugging."""
+        if qn not in ['q1', 'q2', 'q3']:
+            print(f"Error: '{qn}' is not a valid question (use q1, q2, or q3).")
+            return
+        
+        task = self.session.assigned_tasks.get(qn)
+        if not task:
+            print(f"Error: {qn} is not assigned.")
+            return
+        
+        code_file = Path(f"{qn}.py")
+        if not code_file.exists():
+            print(f"Error: File '{qn}.py' not found. Use '{qn}' command first to see the prompt.")
+            return
+        
+        print(f"\nRunning {len(task.tests)} hidden tests for {qn} (DEBUG MODE)...\n")
+        
+        # Run grader
+        results = self.session.grader.grade_submission(task, str(code_file))
+        
+        # Format and display results with details
+        formatted_output = self.session.grader.format_test_results(results, show_details=True)
+        print(formatted_output)
+        
+        # Log debug test results
+        self.session.log("DEBUG_TEST", f"Question: {qn}, Passed: {results['passed']}/{results['total']}")
         
         print()
     

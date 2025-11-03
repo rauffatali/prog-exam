@@ -17,6 +17,7 @@ bank_group*.json
 
 # Virtual environments
 .venv/
+.venv-*/
 venv/
 ENV/
 env/
@@ -51,6 +52,7 @@ plan-gem.md
 instructions.md
 
 # phase handoffs
+documentations/
 tools/HANDOFF.md
 tools/COMMAND_REFERENCE.md
 

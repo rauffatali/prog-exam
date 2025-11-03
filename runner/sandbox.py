@@ -14,13 +14,25 @@ import shutil
 from pathlib import Path
 from typing import Tuple
 
-# Isolation flags for Python interpreter
-# -I: Isolated mode (ignore PYTHONPATH, user site-packages)
-# -B: Don't write .pyc files
-# -S: Don't import site module
-# -E: Ignore environment variables (PYTHONPATH, etc.)
-# -s: Don't add user site directory to sys.path
-ISOLATION_FLAGS = ['-I', '-B', '-S', '-E', '-s']
+# Get the Python interpreter to use
+# When frozen (PyInstaller), sys.executable points to the .exe, but Python is embedded
+# We need to handle this differently for subprocess calls
+def get_python_executable():
+    """Get the appropriate Python executable path."""
+    if getattr(sys, 'frozen', False):
+        # Running as frozen executable (PyInstaller)
+        # In onefile mode, Python is embedded - sys.executable works but may have issues
+        # For maximum compatibility, use minimal isolation
+        return sys.executable, []  # No isolation flags when frozen
+    else:
+        # Running as normal Python script - use standard isolation
+        # Isolation flags for Python interpreter
+        # -I: Isolated mode (ignore PYTHONPATH, user site-packages, implies -E and -s)
+        # -B: Don't write .pyc files
+        # Note: We avoid -S (no site module) as it can cause compatibility issues across machines
+        return sys.executable, ['-I', '-B']
+
+PYTHON_EXE, ISOLATION_FLAGS = get_python_executable()
 
 
 def run_code_stdin_stdout(
@@ -42,16 +54,14 @@ def run_code_stdin_stdout(
         Tuple of (status, stdout, stderr)
         status: "success", "timeout", "runtime_error", "memory_error"
     """
-    command = [sys.executable, *ISOLATION_FLAGS, code_path]
-    
     # Create temporary directory for execution
     with tempfile.TemporaryDirectory() as temp_dir:
         # Copy student code to temp directory
         temp_code_path = Path(temp_dir) / Path(code_path).name
         shutil.copy(code_path, temp_code_path)
         
-        # Update command to use temp path
-        command = [sys.executable, *ISOLATION_FLAGS, str(temp_code_path)]
+        # Build command with appropriate Python executable
+        command = [PYTHON_EXE, *ISOLATION_FLAGS, str(temp_code_path)]
         
         try:
             # Platform-specific resource limiting
@@ -182,7 +192,8 @@ except Exception as e:
         import json
         input_json = json.dumps(args)
         
-        command = [sys.executable, *ISOLATION_FLAGS, str(wrapper_path)]
+        # Build command with appropriate Python executable
+        command = [PYTHON_EXE, *ISOLATION_FLAGS, str(wrapper_path)]
         
         try:
             # Platform-specific resource limiting
