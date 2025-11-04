@@ -76,10 +76,17 @@ def run_code_stdin_stdout(
                     try:
                         import resource
                         # Set CPU time limit (seconds)
-                        resource.setrlimit(resource.RLIMIT_CPU, (int(timeout_sec) + 1, int(timeout_sec) + 1))
-                        # Set memory limit (bytes)
-                        memory_bytes = memory_limit_mb * 1024 * 1024
-                        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+                        try:
+                            resource.setrlimit(resource.RLIMIT_CPU, (int(timeout_sec) + 1, int(timeout_sec) + 1))
+                        except (ValueError, OSError):
+                            pass  # CPU limit not supported or failed
+                        
+                        # Set memory limit (bytes) - may not work on macOS
+                        try:
+                            memory_bytes = memory_limit_mb * 1024 * 1024
+                            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+                        except (ValueError, OSError):
+                            pass  # Memory limit not supported on this system (e.g., macOS)
                     except ImportError:
                         pass  # resource module not available
                 
@@ -204,11 +211,20 @@ except Exception as e:
                 def set_limits():
                     try:
                         import resource
-                        resource.setrlimit(resource.RLIMIT_CPU, (int(timeout_sec) + 1, int(timeout_sec) + 1))
-                        memory_bytes = memory_limit_mb * 1024 * 1024
-                        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+                        # Set CPU time limit (seconds)
+                        try:
+                            resource.setrlimit(resource.RLIMIT_CPU, (int(timeout_sec) + 1, int(timeout_sec) + 1))
+                        except (ValueError, OSError):
+                            pass  # CPU limit not supported or failed
+                        
+                        # Set memory limit (bytes) - may not work on macOS
+                        try:
+                            memory_bytes = memory_limit_mb * 1024 * 1024
+                            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+                        except (ValueError, OSError):
+                            pass  # Memory limit not supported on this system (e.g., macOS)
                     except ImportError:
-                        pass
+                        pass  # resource module not available
                 
                 proc = subprocess.run(
                     command,
