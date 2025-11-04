@@ -525,27 +525,6 @@ Should see one ZIP file per student (typical size: 5-50 KB).
 - Look for directory `jane_doe_TP_EVAL\`
 - Manually create ZIP (see Troubleshooting)
 
-### Step 3: Collect ZIP Files
-
-**Copy to USB drive:**
-```powershell
-Copy-Item C:\exam_system\*.zip -Destination E:\
-```
-(Replace `E:\` with your USB drive letter)
-
-**Or collect manually:**
-Walk to each machine and copy ZIPs to USB.
-
-### Step 4: Verify Collection
-
-**Check:**
-- [ ] Number of ZIPs = number of students
-- [ ] Each ZIP opens without error
-- [ ] Student names match seating chart
-
-**Create backup:**
-Copy all ZIPs to second USB drive or server.
-
 **ZIP contents (expected):**
 ```
 JANE_DOE_TP_EVAL.zip
@@ -849,11 +828,6 @@ python main.py --group 1
 # Enter decryption key
 ```
 
-### Collect Results
-```powershell
-Get-ChildItem C:\exam_system\*.zip | Copy-Item -Destination E:\
-```
-
 ### Restart After Crash
 **Executable:** `.\exam.exe --group 1`  
 **Virtual Env:** `.\.venv\Scripts\Activate.ps1` then `python main.py --group 1`  
@@ -863,9 +837,7 @@ Then: Enter key → Student enters same name → resumes
 
 **For full technical documentation, see:**
 - `tools/README.md` — Bank management & config helper tool
-- `documentations/TEACHER_CONFIG_GUIDE.md` — Complete configuration guide
 - `banks/bank_schema.md` — Question bank format
-- `plan-gem.md` — System design
 - `runner/grader.py` — Grading implementation with debug support
 
 

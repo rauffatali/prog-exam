@@ -63,7 +63,8 @@ echo -e "${CYAN}================================================${NC}"
 echo ""
 
 # Resolve and create output directory
-OUTPUT_PATH=$(realpath -m "$OUTPUT_PATH")
+# Use Python for cross-platform path resolution (works on both macOS and Linux)
+OUTPUT_PATH=$(python3 -c "import os; print(os.path.abspath('$OUTPUT_PATH'))")
 if [ ! -d "$OUTPUT_PATH" ]; then
     mkdir -p "$OUTPUT_PATH"
     echo -e "${GREEN}Created output directory: $OUTPUT_PATH${NC}"
