@@ -210,9 +210,9 @@ class ExamSession:
 class ExamRunner:
     """Main CLI application controller."""
     
-    def __init__(self, group: str, bank_path: Path):
-        self.group = group
-        self.bank_path = bank_path
+    def __init__(self):
+        self.group: Optional[str] = None
+        self.bank_path: Optional[Path] = None
         self.bank: Optional[Bank] = None
         self.session: Optional[ExamSession] = None
         self.config: Optional[ExamConfig] = None
@@ -390,10 +390,9 @@ class ExamRunner:
             formatter_class=argparse.RawDescriptionHelpFormatter
         )
         parser.add_argument(
-            "--group",
+            "--bank",
             required=True,
-            choices=['1', '2'],
-            help="The exam group (1 or 2)"
+            help="Encrypted bank filename (e.g., bank_group1.enc)"
         )
         
         args = parser.parse_args()
@@ -406,9 +405,8 @@ class ExamRunner:
             # Running as script - banks/ should be in project root
             exe_dir = Path(__file__).parent.parent
         
-        # Set group and bank path (relative to executable location)
-        self.group = f"group{args.group}"
-        self.bank_path = exe_dir / "banks" / f"bank_group{args.group}.enc"
+        # Set bank path (relative to executable location)
+        self.bank_path = exe_dir / "banks" / args.bank
         
         # Check if bank file exists
         if not self.bank_path.exists():
@@ -423,7 +421,7 @@ class ExamRunner:
         print("="*60)
         
         try:
-            key_input = getpass.getpass(f"Enter decryption password for Group {args.group}: ")
+            key_input = getpass.getpass(f"Enter decryption password for {args.bank}: ")
             if not key_input:
                 print("Error: Password cannot be empty.")
                 return 1
@@ -439,7 +437,11 @@ class ExamRunner:
         if not self.load_bank(key_input):
             return 1
         
+        # Extract group name from the loaded bank
+        self.group = self.bank.group
+        
         print("✓ Bank loaded successfully.")
+        print(f"✓ Group: {self.group}")
         
         # Load exam configuration
         try:
@@ -811,7 +813,7 @@ Available commands:
 
 def main():
     """Entry point for the exam runner."""
-    runner = ExamRunner(group="", bank_path=Path(""))
+    runner = ExamRunner()
     sys.exit(runner.run())
 
 
