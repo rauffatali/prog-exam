@@ -13,6 +13,9 @@ import getpass
 import json
 import hashlib
 import base64
+import time
+import threading
+from typing import Callable
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional
@@ -24,6 +27,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from .models import Bank, Task, ExamConfig
 from .grader import Grader
 from .config_loader import load_config
+from .connectivity import check_internet_connectivity
 
 
 class ExamSession:
@@ -341,7 +345,7 @@ class ExamRunner:
             print(f"\n✓ Authenticated as {surname}, {name}")
             print(f"✓ Working directory: {work_dir}")
             print(f"✓ Assigned tasks: {', '.join(task.id for task in self.session.assigned_tasks.values())}")
-            
+
             return True
         
         except (KeyboardInterrupt, EOFError):
@@ -415,6 +419,20 @@ class ExamRunner:
             print(f"Please ensure the 'banks' directory is in the same folder as the executable.")
             return 1
         
+        # Check for internet connectivity before starting exam
+        print("\nChecking network connectivity...")
+        has_connectivity = check_internet_connectivity()
+        if has_connectivity:
+            print("\n" + "!"*65)
+            print("NETWORK CONNECTION DETECTED!")
+            print("Please disconnect from the internet to start the exam.")
+            print("Close your browser, disable Wi-Fi, or unplug your network cable.")
+            print("Then restart the exam application.")
+            print("!"*65)
+            return 1
+        else:
+            print("✓ No internet connection detected. Exam can proceed.")
+        
         # Get decryption key/password
         print("="*60)
         print("OFFLINE PYTHON EXAM SYSTEM")
@@ -457,11 +475,68 @@ class ExamRunner:
         
         # Change to working directory
         os.chdir(self.session.work_dir)
+
+        self.network_monitor_active = True
+        self.network_thread = threading.Thread(
+            target=self._monitor_network_background,
+            daemon=True
+        )
+        self.network_thread.start()
         
-        # Main command loop
-        self.command_loop()
+        try:
+            self.command_loop()
+        finally:
+            self.network_monitor_active = False
+            if self.network_thread.is_alive():
+                self.network_thread.join(timeout=1.0)
         
         return 0
+    
+    def _monitor_network_background(self):
+        """Background network monitoring thread."""
+        last_check_time = time.time()
+        check_interval = 15  # Check every 15 seconds
+        check_count = 0
+        
+        while self.network_monitor_active:
+            current_time = time.time()
+            if current_time - last_check_time >= check_interval:
+                check_count += 1
+                has_connectivity = check_internet_connectivity()
+                
+                # Log every connectivity check (whether connected or not)
+                status = "CONNECTED" if has_connectivity else "OFFLINE"
+                self.session.log("NETWORK_CHECK", f"Check #{check_count}: Internet status = {status}")
+                
+                if has_connectivity:
+                    self._handle_network_detected()
+                    break
+                last_check_time = current_time
+            time.sleep(1)  # Avoid busy waiting
+    
+    def _handle_network_detected(self):
+        """Handle when network connectivity is detected during exam."""
+        print("\n" + "!"*60)
+        print("⚠️  NETWORK CONNECTION DETECTED DURING EXAM! ⚠️")
+        print("Please disconnect from the internet to continue.")
+        print("Close your browser, disable Wi-Fi, or unplug your network cable.")
+        print("The exam will resume automatically once you're offline.")
+        print("!"*60)
+        
+        self.session.log("NETWORK_DETECTED", "Internet connection detected during exam - exam paused")
+        
+        # Wait for network to go offline
+        wait_count = 0
+        while check_internet_connectivity():
+            wait_count += 1
+            time.sleep(2)
+            print("Still detecting internet connection... please disconnect.")
+            # Log every 10 seconds of waiting
+            if wait_count % 5 == 0:  # Every 10 seconds
+                self.session.log("NETWORK_WAITING", f"Still connected after {wait_count * 2} seconds")
+        
+        print("\n✓ Network disconnected. Exam resuming...")
+        self.session.log("NETWORK_DISCONNECTED", "Internet connection removed - exam resumed")
     
     def command_loop(self):
         """Main interactive command loop."""
