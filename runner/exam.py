@@ -28,6 +28,7 @@ from .models import Bank, Task, ExamConfig
 from .grader import Grader
 from .config_loader import load_config
 from .connectivity import check_internet_connectivity
+from .ai_detector import AIDetector, check_ai_tools_at_startup
 
 
 class ExamSession:
@@ -66,6 +67,10 @@ class ExamSession:
         
         # Track if session is finalized
         self.is_finished = False
+
+        # AI detection
+        self.ai_detector = None
+        self.ai_monitor_active = False
     
     def log(self, event: str, details: str = ""):
         """Append an entry to the session log."""
@@ -419,21 +424,7 @@ class ExamRunner:
             print(f"Please ensure the 'banks' directory is in the same folder as the executable.")
             return 1
         
-        # Check for internet connectivity before starting exam
-        print("\nChecking network connectivity...")
-        has_connectivity = check_internet_connectivity()
-        if has_connectivity:
-            print("\n" + "!"*65)
-            print("NETWORK CONNECTION DETECTED!")
-            print("Please disconnect from the internet to start the exam.")
-            print("Close your browser, disable Wi-Fi, or unplug your network cable.")
-            print("Then restart the exam application.")
-            print("!"*65)
-            return 1
-        else:
-            print("✓ No internet connection detected. Exam can proceed.")
-        
-        # Get decryption key/password
+        # Get decryption key/password (moved before connectivity checks to load bank settings)
         print("="*60)
         print("OFFLINE PYTHON EXAM SYSTEM")
         print("="*60)
@@ -461,6 +452,48 @@ class ExamRunner:
         print("✓ Bank loaded successfully.")
         print(f"✓ Group: {self.group}")
         
+        # Check network monitoring settings from bank
+        if self.bank.network_monitoring.enabled:
+            print(f"✓ Network monitoring: enabled (check interval: {self.bank.network_monitoring.check_interval_seconds}s)")
+            
+            # Check for internet connectivity before starting exam
+            print("\nChecking network connectivity...")
+            has_connectivity = check_internet_connectivity()
+            if has_connectivity:
+                print("\n" + "!"*65)
+                print("NETWORK CONNECTION DETECTED!")
+                print("Please disconnect from the internet to start the exam.")
+                print("Close your browser, disable Wi-Fi, or unplug your network cable.")
+                print("Then restart the exam application.")
+                print("!"*65)
+                return 1
+            else:
+                print("✓ No internet connection detected. Exam can proceed.")
+        else:
+            print("✓ Network monitoring: disabled")
+        
+        # Check AI detection settings from bank
+        if self.bank.ai_detection.enabled:
+            print(f"✓ AI detection: enabled (check interval: {self.bank.ai_detection.check_interval_seconds}s)")
+
+            # Check for AI tools before starting exam
+            print("\nChecking for AI coding assistants...")
+            ai_detected, ai_tools = check_ai_tools_at_startup()
+            if ai_detected:
+                tool_list = ", ".join(ai_tools)
+                print("\n" + "!"*70)
+                print("⚠️  AI CODING ASSISTANTS DETECTED! ⚠️")
+                print(f"Detected tools: {tool_list}")
+                print("Please close all AI coding assistants before starting the exam.")
+                print("Common AI tools: GitHub Copilot, Tabnine, Cursor, Codeium, etc.")
+                print("Then restart the exam application.")
+                print("!"*70)
+                return 1
+            else:
+                print("✓ No AI coding assistants detected.")
+        else:
+            print("✓ AI detection: disabled")
+        
         # Load exam configuration
         try:
             self.config = load_config()
@@ -473,29 +506,48 @@ class ExamRunner:
         if not self.authenticate_student():
             return 1
         
-        # Change to working directory
         os.chdir(self.session.work_dir)
 
-        self.network_monitor_active = True
-        self.network_thread = threading.Thread(
-            target=self._monitor_network_background,
-            daemon=True
-        )
-        self.network_thread.start()
+        # Start network monitoring if enabled
+        if self.bank.network_monitoring.enabled:
+            self.network_monitor_active = True
+            self.network_thread = threading.Thread(
+                target=self._monitor_network_background,
+                daemon=True
+            )
+            self.network_thread.start()
+        else:
+            self.network_monitor_active = False
+            self.network_thread = None
+
+        # Start AI monitoring if enabled
+        if self.bank.ai_detection.enabled:
+            self.ai_detector = AIDetector(session_logger=self.session.log)
+            self.ai_detector.process_check_interval = self.bank.ai_detection.check_interval_seconds
+            self.ai_detector.start_monitoring()
+            self.ai_monitor_active = True
+        else:
+            self.ai_detector = None
+            self.ai_monitor_active = False
         
         try:
             self.command_loop()
         finally:
-            self.network_monitor_active = False
-            if self.network_thread.is_alive():
-                self.network_thread.join(timeout=1.0)
+            if self.network_monitor_active:
+                self.network_monitor_active = False
+                if self.network_thread and self.network_thread.is_alive():
+                    self.network_thread.join(timeout=1.0)           
+            if self.ai_monitor_active and self.ai_detector:
+                self.ai_detector.stop_monitoring()
+                self.ai_monitor_active = False
         
         return 0
     
     def _monitor_network_background(self):
         """Background network monitoring thread."""
         last_check_time = time.time()
-        check_interval = 15  # Check every 15 seconds
+        # Use check interval from bank configuration
+        check_interval = self.bank.network_monitoring.check_interval_seconds
         check_count = 0
         
         while self.network_monitor_active:
@@ -543,6 +595,14 @@ class ExamRunner:
         print("\n" + "="*60)
         print("Type 'help' to see available commands.")
         print("="*60 + "\n")
+
+        # Track file modification times for copy-paste detection
+        self.file_mod_times = {}
+        for i in range(self.session.config.total_questions):
+            qn = f"q{i+1}"
+            code_file = Path(f"{qn}.py")
+            if code_file.exists():
+                self.file_mod_times[qn] = code_file.stat().st_mtime
         
         while not self.session.is_finished:
             try:
@@ -552,6 +612,9 @@ class ExamRunner:
                 
                 parts = cmd_line.split()
                 command = parts[0].lower()
+
+                # Check for file modifications (indicates student editing)
+                self._check_file_modifications()
                 
                 # Log command
                 self.session.log("COMMAND_RUN", f"Command: {cmd_line}")
@@ -589,6 +652,30 @@ class ExamRunner:
                 print(f"An unexpected error occurred: {e}")
                 self.session.log("ERROR", str(e))
     
+    def _check_file_modifications(self):
+        """Check if code files have been modified (for copy-paste detection)."""
+        for i in range(self.session.config.total_questions):
+            qn = f"q{i+1}"
+            code_file = Path(f"{qn}.py")
+            
+            if code_file.exists():
+                current_mtime = code_file.stat().st_mtime
+                last_mtime = self.file_mod_times.get(qn, 0)
+                
+                if current_mtime != last_mtime:
+                    # File was modified
+                    size_diff = code_file.stat().st_size
+                    if last_mtime > 0:  # Not the first check
+                        size_increase = size_diff - (self.file_sizes.get(qn, 0) if hasattr(self, 'file_sizes') else 0)
+                        if size_increase > 200:  # Large addition
+                            self.session.log("LARGE_CODE_ADDITION", 
+                                           f"Question {qn}: +{size_increase} bytes added rapidly")
+                    
+                    self.file_mod_times[qn] = current_mtime
+                    if not hasattr(self, 'file_sizes'):
+                        self.file_sizes = {}
+                    self.file_sizes[qn] = size_diff
+
     def cmd_help(self):
         """Display help message."""
         # Generate question list dynamically

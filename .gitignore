@@ -6,8 +6,9 @@
 *.key
 
 # Plaintext question banks (must remain in private repository only)
-bank_group*.json
-!bank_group*_sample.json
+banks/*.json
+banks/*.enc
+banks/*.py
 
 # Temporary/test banks
 *_sample.json

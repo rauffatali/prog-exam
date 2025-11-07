@@ -4,6 +4,11 @@
 # Encryption/Decryption of question banks
 cryptography>=42.0.0,<44.0.0
 
+# AI Autocomplete Detection
+pywin32>=304
+pypiwin32>=223
+psutil>=5.9.0
+
 # For development and packaging only (not required at runtime for executables)
 # pyinstaller>=6.0.0
 

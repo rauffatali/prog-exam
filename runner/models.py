@@ -98,6 +98,46 @@ class Task:
 
 
 @dataclass
+class NetworkMonitoringConfig:
+    """Network monitoring settings from the bank."""
+    enabled: bool
+    check_interval_seconds: int
+    
+    @staticmethod
+    def from_dict(data: dict) -> 'NetworkMonitoringConfig':
+        """Create NetworkMonitoringConfig from dictionary."""
+        return NetworkMonitoringConfig(
+            enabled=data.get('enabled', False),
+            check_interval_seconds=data.get('check_interval_seconds', 15)
+        )
+    
+    @staticmethod
+    def default() -> 'NetworkMonitoringConfig':
+        """Return default config (monitoring disabled)."""
+        return NetworkMonitoringConfig(enabled=False, check_interval_seconds=15)
+
+
+@dataclass
+class AIDetectionConfig:
+    """AI detection settings from the bank."""
+    enabled: bool
+    check_interval_seconds: int
+    
+    @staticmethod
+    def from_dict(data: dict) -> 'AIDetectionConfig':
+        """Create AIDetectionConfig from dictionary."""
+        return AIDetectionConfig(
+            enabled=data.get('enabled', True),
+            check_interval_seconds=data.get('check_interval_seconds', 60),
+        )
+    
+    @staticmethod
+    def default() -> 'AIDetectionConfig':
+        """Return default config (detection enabled)."""
+        return AIDetectionConfig(enabled=True, check_interval_seconds=60)
+
+
+@dataclass
 class Bank:
     """Represents the entire question bank."""
     group: str
@@ -105,18 +145,32 @@ class Bank:
     easy: List[Task]
     medium: List[Task]
     hard: List[Task]
+    network_monitoring: NetworkMonitoringConfig
+    ai_detection: AIDetectionConfig
 
     @staticmethod
     def from_dict(data: dict) -> 'Bank':
         """Create a Bank object from a dictionary."""
         difficulties = data['difficulties']
         
+        # Load network monitoring config if present
+        network_config = NetworkMonitoringConfig.default()
+        if 'network_monitoring' in data:
+            network_config = NetworkMonitoringConfig.from_dict(data['network_monitoring'])
+        
+        # Load AI detection config if present
+        ai_config = AIDetectionConfig.default()
+        if 'ai_detection' in data:
+            ai_config = AIDetectionConfig.from_dict(data['ai_detection'])
+        
         return Bank(
             group=data['group'],
             version=data['version'],
             easy=[Task.from_dict(t) for t in difficulties['easy']],
             medium=[Task.from_dict(t) for t in difficulties['medium']],
-            hard=[Task.from_dict(t) for t in difficulties['hard']]
+            hard=[Task.from_dict(t) for t in difficulties['hard']],
+            network_monitoring=network_config,
+            ai_detection=ai_config
         )
     
     def get_all_tasks(self) -> Dict[str, Task]:
