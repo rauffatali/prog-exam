@@ -31,7 +31,7 @@ class AIDetector:
                 'kite',
                 'intellicode',
                 'codex',
-                # 'cursor',
+                'cursor',
                 'windsor',
                 'continue',
                 'codium',
