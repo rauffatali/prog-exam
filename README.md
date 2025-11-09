@@ -45,7 +45,7 @@
 **Get from exam coordinator:**
 - [ ] Encrypted question bank file (`bank_group1.enc` or `bank_group2.enc`)
 - [ ] Decryption key (Base64 string like `EE2GANWkqT...` OR password)
-- [ ] Exam system files (full `exam_system/` directory)
+- [ ] Exam system files (full `prog-exam/` directory)
 - [ ] **(Optional)** Exam configuration file (`exam_config.json`)
 
 **Key security:**
@@ -65,14 +65,14 @@
 1. Copy exam system directory
 2. Verify files exist:
    ```powershell
-   Test-Path exam_system\banks\bank_group1.enc
-   Test-Path exam_system\requirements.txt
-   Test-Path exam_system\main.py
+   Test-Path prog-exam\banks\bank_group1.enc
+   Test-Path prog-exam\requirements.txt
+   Test-Path prog-exam\main.py
    ```
 
 3. Test decryption (optional, if you have key):
    ```powershell
-   cd exam_system
+   cd prog-exam
    python tools\verify_bank.py --bank banks\bank_group1.enc --key-file GROUP1.key
    ```
    Expected: `[OK] Bank validation PASSED`
@@ -95,7 +95,7 @@ Teachers can customize exam parameters using a configuration file.
 **Option 1: Use Interactive Tool (Recommended)**
 
 ```powershell
-cd exam_system
+cd prog-exam
 python tools\config_helper.py
 ```
 
@@ -200,7 +200,7 @@ python tools\config_helper.py
 **On your development machine (requires internet):**
 
 ```powershell
-cd exam_system
+cd prog-exam
 .\scripts\build_windows.ps1
 ```
 
@@ -220,7 +220,7 @@ cd exam_system
 **On your development machine:**
 
 ```bash
-cd exam_system
+cd prog-exam
 chmod +x scripts/build_unix.sh
 ./scripts/build_unix.sh
 ```
@@ -240,7 +240,7 @@ chmod +x scripts/build_unix.sh
 
 **Distribute to exam machines:**
 ```
-exam_system/
+prog-exam/
 ├── exam.exe            ← Built executable (Windows)
 ├── exam_config.json    ← (Optional) Configuration file
 └── banks/
@@ -272,12 +272,12 @@ Place `exam_config.json` in the same directory as `exam.exe`. The system will au
 1. **Copy to each machine:**
    ```powershell
    # Copy executable and banks
-   Copy-Item -Recurse E:\exam_system -Destination C:\
+   Copy-Item -Recurse E:\prog-exam -Destination C:\
    ```
 
 2. **Verify files:**
    ```powershell
-   cd C:\exam_system
+   cd C:\prog-exam
    Test-Path exam.exe
    Test-Path banks\bank_group1.enc
    ```
@@ -298,12 +298,12 @@ Place `exam_config.json` in the same directory as `exam.exe`. The system will au
 1. **Copy exam system directory:**
    ```powershell
    # Copy from USB/network to each machine
-   Copy-Item -Recurse E:\exam_system -Destination C:\
+   Copy-Item -Recurse E:\prog-exam -Destination C:\
    ```
 
 2. **Navigate to exam directory:**
    ```powershell
-   Set-Location C:\exam_system
+   Set-Location C:\prog-exam
    ```
 
 3. **Check Python is installed:**
@@ -338,7 +338,7 @@ Should show help text without errors.
 
 **Quick check on each machine:**
 ```powershell
-cd C:\exam_system
+cd C:\prog-exam
 # If using executable:
 Test-Path exam.exe
 # If using virtual environment:
@@ -361,13 +361,13 @@ All should return `True`.
 
    **If using executable:**
    ```powershell
-   cd C:\exam_system
+   cd C:\prog-exam
    .\exam.exe --group 1
    ```
    
    **If using virtual environment:**
    ```powershell
-   cd C:\exam_system
+   cd C:\prog-exam
    .\.venv\Scripts\Activate.ps1
    python main.py --group 1
    ```
@@ -509,13 +509,13 @@ Get-Content jane_doe_TP_EVAL\session.log -Tail 10
 exam> finish
 ```
 
-System creates ZIP file: `JANE_DOE_TP_EVAL.zip` in `C:\exam_system\`
+System creates ZIP file: `JANE_DOE_TP_EVAL.zip` in `C:\prog-exam\`
 
 ### Step 2: Verify ZIP Files
 
 **On each machine:**
 ```powershell
-Get-ChildItem C:\exam_system\*.zip
+Get-ChildItem C:\prog-exam\*.zip
 ```
 
 Should see one ZIP file per student (typical size: 5-50 KB).
@@ -680,13 +680,13 @@ Compress-Archive -Path * -DestinationPath ..\JANE_DOE_TP_EVAL.zip
    
    **If using executable:**
    ```powershell
-   cd C:\exam_system
+   cd C:\prog-exam
    .\exam.exe --group 1
    ```
    
    **If using virtual environment:**
    ```powershell
-   cd C:\exam_system
+   cd C:\prog-exam
    .\.venv\Scripts\Activate.ps1
    python main.py --group 1
    ```
@@ -771,7 +771,7 @@ IMPORTANT:
 
 ### Create Exam Configuration (Optional)
 ```powershell
-cd exam_system
+cd prog-exam
 python tools\config_helper.py
 # Choose option 1, follow prompts
 ```
@@ -786,7 +786,7 @@ python tools\config_helper.py
 ### Build Executable (Before Exam - Optional)
 ```powershell
 # Windows
-cd exam_system
+cd prog-exam
 .\scripts\build_windows.ps1
 
 # Linux/macOS
@@ -799,13 +799,13 @@ Output: `exam.exe` (Windows) or `exam` (Unix)
 **Method A: Executable (simpler)**
 ```powershell
 # Just copy files
-Copy-Item -Recurse E:\exam_system -Destination C:\
+Copy-Item -Recurse E:\prog-exam -Destination C:\
 # Test: .\exam.exe --help
 ```
 
 **Method B: Virtual Environment**
 ```powershell
-cd C:\exam_system
+cd C:\prog-exam
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -815,14 +815,14 @@ pip install -r requirements.txt
 
 **Executable:**
 ```powershell
-cd C:\exam_system
+cd C:\prog-exam
 .\exam.exe --group 1
 # Enter decryption key
 ```
 
 **Virtual Environment:**
 ```powershell
-cd C:\exam_system
+cd C:\prog-exam
 .\.venv\Scripts\Activate.ps1
 python main.py --group 1
 # Enter decryption key
