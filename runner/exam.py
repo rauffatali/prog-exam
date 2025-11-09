@@ -15,9 +15,8 @@ import hashlib
 import base64
 import time
 import threading
-from typing import Callable
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional
 from zipfile import ZipFile, ZIP_DEFLATED
 from cryptography.fernet import Fernet
@@ -71,6 +70,10 @@ class ExamSession:
         # AI detection
         self.ai_detector = None
         self.ai_monitor_active = False
+
+        # Exam timing
+        self.exam_start_time: Optional[datetime] = None
+        self.exam_end_time: Optional[datetime] = None
     
     def log(self, event: str, details: str = ""):
         """Append an entry to the session log."""
@@ -82,6 +85,33 @@ class ExamSession:
         
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(log_entry)
+    
+    def start_exam_timer(self):
+        """Start the exam timer when the exam begins."""
+        self.exam_start_time = datetime.now()
+        self.exam_end_time = self.exam_start_time + timedelta(minutes=self.config.exam_time_minutes)
+        self.log("EXAM_START", f"Exam started at {self.exam_start_time.strftime('%H:%M:%S')}, duration: {self.config.exam_time_minutes} minutes")
+    
+    def get_remaining_time(self) -> timedelta:
+        """Get the remaining exam time as a timedelta."""
+        if self.exam_end_time is None:
+            return timedelta(0)
+        
+        remaining = self.exam_end_time - datetime.now()
+        return max(remaining, timedelta(0))
+        
+    def is_time_expired(self) -> bool:
+        """Check if exam time has expired."""
+        return self.get_remaining_time() <= timedelta(0)
+    
+    def format_remaining_time(self) -> str:
+        """Format remaining time as HH:MM:SS."""
+        remaining = self.get_remaining_time()
+        total_seconds = int(remaining.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     
     def save_assignment(self):
         """Save the task assignment to assignment.json."""
@@ -508,6 +538,9 @@ class ExamRunner:
         
         os.chdir(self.session.work_dir)
 
+        self.session.start_exam_timer()
+        print(f"✓ Exam timer started: {self.config.exam_time_minutes} minutes allowed")
+
         # Start network monitoring if enabled
         if self.bank.network_monitoring.enabled:
             self.network_monitor_active = True
@@ -529,19 +562,70 @@ class ExamRunner:
         else:
             self.ai_detector = None
             self.ai_monitor_active = False
-        
+
+        # Start exam timer if enabled
+        self.exam_timer_active = True
+        self.exam_timer_thread = threading.Thread(
+            target=self._monitor_exam_timer,
+            daemon=True
+        )
+        self.exam_timer_thread.start()
+
         try:
             self.command_loop()
         finally:
+            # Stop timer monitoring
+            self.exam_timer_active = False
+            if self.exam_timer_thread and self.exam_timer_thread.is_alive():
+                self.exam_timer_thread.join(timeout=1.0)
+            # Stop network monitoring
             if self.network_monitor_active:
                 self.network_monitor_active = False
                 if self.network_thread and self.network_thread.is_alive():
                     self.network_thread.join(timeout=1.0)           
+            # Stop AI monitoring
             if self.ai_monitor_active and self.ai_detector:
                 self.ai_detector.stop_monitoring()
                 self.ai_monitor_active = False
         
         return 0
+    
+    def _monitor_exam_timer(self):
+        """Background thread to monitor exam time and auto-finish when expired."""
+        while self.exam_timer_active and not self.session.is_finished:
+            if self.session.is_time_expired():
+                print("\n" + "!"*60)
+                print("⚠️  EXAM TIME FINISHED! ⚠️")
+                print("Your exam has automatically stopped.")
+                print("!"*60)
+                
+                self.session.log("EXAM_TIMEOUT", "Exam time finished - auto-stopping")
+                
+                # Auto-stop the exam
+                self._auto_finish_exam()
+                break
+            
+            time.sleep(1)  # Check every second
+    
+    def _auto_finish_exam(self):
+        """Automatically finish the exam when time expires."""
+        try:
+            # Generate results file
+            self.session.generate_results_file()
+            
+            # Create submission ZIP
+            zip_path = self.session.create_submission_zip()
+            
+            # Log session finish
+            self.session.log("SESSION_FINISH_TIMEOUT", f"Total Score: {self.session.get_total_score():.2f}")
+            
+            print(f"Submission package '{zip_path.name}' created successfully.")
+            print("Your work is now locked. Thank you.")
+            
+            self.session.is_finished = True
+        except Exception as e:
+            print(f"Error during auto-finish: {e}")
+            self.session.log("ERROR", f"Auto-finish error: {e}")
     
     def _monitor_network_background(self):
         """Background network monitoring thread."""
@@ -588,6 +672,7 @@ class ExamRunner:
                 self.session.log("NETWORK_WAITING", f"Still connected after {wait_count * 2} seconds")
         
         print("\n✓ Network disconnected. Exam resuming...")
+        print("Press Enter to continue...")
         self.session.log("NETWORK_DISCONNECTED", "Internet connection removed - exam resumed")
     
     def command_loop(self):
@@ -606,6 +691,12 @@ class ExamRunner:
         
         while not self.session.is_finished:
             try:
+                # Check if time has expired before each command
+                if self.session.is_time_expired():
+                    print("\n⚠️  Exam time finished!")
+                    self._auto_finish_exam()
+                    break
+
                 cmd_line = input("exam> ").strip()
                 if not cmd_line:
                     continue
@@ -643,6 +734,8 @@ class ExamRunner:
                         self.cmd_submit(parts[1].lower())
                 elif command == 'status':
                     self.cmd_status()
+                elif command == 'time':
+                    self.cmd_time()
                 else:
                     print(f"Unknown command: '{command}'. Type 'help' for a list of commands.")
             
@@ -688,10 +781,28 @@ Available commands:
   debug qN         Run tests with detailed error messages and output comparison.
   submit qN        Submit your code for question N.
   status           Show your current submission status and scores.
+  time             Show remaining exam time.
   finish           Finalize and package your submission.
   help             Show this help message.
 """
         print(help_text)
+    
+    def cmd_time(self):
+        """Display remaining exam time."""
+        remaining_time = self.session.format_remaining_time()
+        total_minutes = self.config.exam_time_minutes
+        elapsed_minutes = (datetime.now() - self.session.exam_start_time).total_seconds() / 60
+        elapsed_formatted = f"{elapsed_minutes:.1f}"
+        
+        print(f"\nExam Time Remaining: {remaining_time}")
+        print(f"Elapsed: {elapsed_formatted} minutes out of {total_minutes} minutes")
+        
+        # Warning if less than 30 minutes left
+        remaining_minutes = self.session.get_remaining_time().total_seconds() / 60
+        if remaining_minutes <= 30:
+            print("⚠️  Less than 30 minutes remaining!")
+        
+        print()
     
     def cmd_show_question(self, qn: str):
         """Display the prompt for a question."""

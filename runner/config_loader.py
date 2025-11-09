@@ -80,6 +80,7 @@ def create_sample_config(output_path: Path):
         "medium_weight": 5.0,
         "hard_weight": 5.0,
         "max_points": 15.0,
+        "exam_time_minutes": 180,
         "_comment": "This is a sample exam configuration. Adjust values as needed.",
         "_instructions": {
             "total_questions": "Total number of questions per student",
@@ -89,7 +90,8 @@ def create_sample_config(output_path: Path):
             "easy_weight": "Points awarded for each easy question",
             "medium_weight": "Points awarded for each medium question",
             "hard_weight": "Points awarded for each hard question",
-            "max_points": "Maximum total points (should equal sum of all weights)"
+            "max_points": "Maximum total points (should equal sum of all weights)",
+            "exam_time_minutes": "Total time allowed for the exam in minutes"
         },
         "_examples": [
             {
@@ -101,7 +103,8 @@ def create_sample_config(output_path: Path):
                 "easy_weight": 5.0,
                 "medium_weight": 5.0,
                 "hard_weight": 5.0,
-                "max_points": 15.0
+                "max_points": 15.0,
+                "exam_time_minutes": 120
             },
             {
                 "description": "Weighted exam: harder questions worth more",
@@ -112,7 +115,8 @@ def create_sample_config(output_path: Path):
                 "easy_weight": 3.0,
                 "medium_weight": 5.0,
                 "hard_weight": 7.0,
-                "max_points": 15.0
+                "max_points": 15.0,
+                "exam_time_minutes": 90
             },
             {
                 "description": "5-question exam with 20 total points",
@@ -123,7 +127,8 @@ def create_sample_config(output_path: Path):
                 "easy_weight": 3.0,
                 "medium_weight": 4.0,
                 "hard_weight": 6.0,
-                "max_points": 20.0
+                "max_points": 20.0,
+                "exam_time_minutes": 150
             }
         ]
     }

@@ -31,7 +31,7 @@ class AIDetector:
                 'kite',
                 'intellicode',
                 'codex',
-                'cursor',
+                # 'cursor',
                 'windsor',
                 'continue',
                 'codium',
@@ -78,27 +78,7 @@ class AIDetector:
             ]
         }
         
-        # AI websites to monitor (if browser monitoring is enabled)
-        self.ai_websites = [
-            'chat.openai.com',
-            'claude.ai',
-            'bard.google.com',
-            'gemini.google.com',
-            'copilot.microsoft.com',
-            'github.com/copilot',
-            'tabnine.com',
-            'kite.com',
-            'cursor.sh',
-            'replit.com',
-            'codeium.com',
-            'askcodi.com',
-            'blackbox.ai',
-            'mutable.ai',
-            'refact.ai',
-            'codegeex.cn',
-            'genie.works'
-        ]
-        
+
         # Detection state
         self.last_clipboard_content = ""
         self.clipboard_check_interval = 30  # seconds
@@ -148,7 +128,7 @@ class AIDetector:
                 
                 # Check clipboard for suspicious activity
                 if current_time - self.last_clipboard_check >= self.clipboard_check_interval:
-                    self._check_clipboard_activity()
+                    self._check_clipboard_activity() # check for suspicious large code pastes
                     self.last_clipboard_check = current_time
                 
                 time.sleep(5)  # Check every 5 seconds
@@ -415,6 +395,7 @@ class AIDetector:
                 
                 if not running:
                     print("\n✓ AI processes closed. Exam resuming...")
+                    print("Press Enter to continue...")
                     if self.session_logger:
                         self.session_logger("AI_PROCESSES_CLOSED", "Detected AI processes have been terminated")
                     break
@@ -445,51 +426,10 @@ class AIDetector:
         # Reset counter but keep monitoring
         self.suspicious_paste_count = 0
     
-    def check_browser_ai_activity(self) -> bool:
-        """Check if browsers are accessing AI websites (basic check)."""
-        # This is a basic implementation - more sophisticated monitoring
-        # would require browser extension or network monitoring
-        
-        system = platform.system().lower()
-        browser_processes = []
-        
-        try:
-            if system == "windows":
-                # Check for browser processes
-                browsers = ['chrome.exe', 'firefox.exe', 'msedge.exe', 'opera.exe', 'brave.exe']
-                result = subprocess.run(
-                    ['tasklist', '/FO', 'CSV', '/NH', '/FI', f"IMAGENAME eq {browsers[0]}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    return True
-                    
-            else:
-                # Unix-like systems
-                browsers = ['chrome', 'firefox', 'chromium', 'opera', 'brave']
-                for browser in browsers:
-                    try:
-                        result = subprocess.run(
-                            ['pgrep', '-f', browser],
-                            capture_output=True,
-                            timeout=3
-                        )
-                        if result.returncode == 0:
-                            return True
-                    except (subprocess.CalledProcessError, FileNotFoundError):
-                        continue
-                        
-        except Exception:
-            pass
-        
-        return False
-    
     def _check_vscode_extensions(self) -> List[str]:
         """Check for AI extensions installed in VS Code."""
         system = platform.system().lower()
-        detected_extensions = []
+        detected_extensions = set()
         
         # VS Code extensions directory
         if system == "windows":
@@ -517,7 +457,7 @@ class AIDetector:
                 for item in os.listdir(vscode_ext_dir):
                     for ai_ext in ai_extensions:
                         if item.startswith(ai_ext):
-                            detected_extensions.append(ai_ext)
+                            detected_extensions.add(ai_ext)
                             break
             except (PermissionError, OSError):
                 pass
@@ -573,16 +513,14 @@ class AIDetector:
         # Check VS Code extensions
         vscode_extensions = self._check_vscode_extensions()
         if vscode_extensions:
-            for ext in vscode_extensions:
-                detected.append(f"VS Code: {ext}")
-                
-                # For Copilot specifically, check if it's enabled
+            for ext in vscode_extensions:    
                 if ext == 'github.copilot':
                     enabled, details = self._check_vscode_copilot_enabled()
                     if enabled:
-                        detected[-1] += f" ({details})"
-                    else:
-                        detected[-1] += f" (installed but {details})"
+                        detected.append(f"VS Code: {ext} ({details})")
+                    continue
+                
+                detected.append(f"VS Code: {ext}")
         
         # TODO: Add checks for other IDEs (PyCharm, IntelliJ, etc.)
         
@@ -604,6 +542,10 @@ def check_ai_tools_at_startup() -> Tuple[bool, List[str]]:
             detected = detector._check_processes_windows(detector.ai_processes.get(system, []))
         else:
             detected = detector._check_processes_unix(detector.ai_processes.get(system, []))
+        
+        ide_detected, ide_tools = detector.check_ide_ai_tools()
+        if ide_detected:
+            detected.extend(ide_tools)
         
         return len(detected) > 0, detected
         

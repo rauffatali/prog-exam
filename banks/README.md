@@ -1,7 +1,7 @@
-# Question Bank JSON Schema — Official Specification v1.0
+# Question Bank JSON Schema — Official Specification v1.1
 
 **Target:** Offline Python Exam System  
-**Last Updated:** 2025-11-01  
+**Last Updated:** 2025-11-07  
 **Applies To:** Group 1 and Group 2 banks (plaintext → encrypted)
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Overview
 
 Each question bank is a single JSON file containing:
-- **60 total tasks**: 20 Easy, 20 Medium, 20 Hard
+- **25 total tasks**: 10 Easy, 10 Medium, 5 Hard
 - **15 test cases per task** (hidden from students during exam)
 - **Metadata**: time limits, memory limits, I/O modes, checkers
 
@@ -23,6 +23,14 @@ Each question bank is a single JSON file containing:
 {
   "group": "group1",
   "version": "2025.11.01",
+  "network_monitoring": {
+    "enabled": false,
+    "check_interval_seconds": 15
+  },
+  "ai_detection": {
+    "enabled": true,
+    "check_interval_seconds": 60
+  },
   "difficulties": {
     "easy": [ /* 20 Task objects */ ],
     "medium": [ /* 20 Task objects */ ],
@@ -37,10 +45,60 @@ Each question bank is a single JSON file containing:
 |-------|------|----------|-------------|
 | `group` | string | ✓ | Group identifier: `"group1"` or `"group2"` |
 | `version` | string | ✓ | Bank version (ISO date recommended: `YYYY.MM.DD`) |
+| `network_monitoring` | object | ✗ | Network monitoring configuration (see §2.1) |
+| `ai_detection` | object | ✗ | AI detection configuration (see §2.2) |
 | `difficulties` | object | ✓ | Contains `easy`, `medium`, `hard` arrays |
 | `difficulties.easy` | array | ✓ | Array of 20 Easy task objects |
 | `difficulties.medium` | array | ✓ | Array of 20 Medium task objects |
 | `difficulties.hard` | array | ✓ | Array of 20 Hard task objects |
+
+### 2.1 Network Monitoring Configuration
+
+Controls whether the exam system monitors internet connectivity during the exam.
+
+```json
+"network_monitoring": {
+  "enabled": true,
+  "check_interval_seconds": 15
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable/disable network connectivity monitoring |
+| `check_interval_seconds` | integer | `15` | How often to check for internet connection (in seconds) |
+
+**Behavior when enabled:**
+- Pre-exam check: Blocks exam start if internet is detected
+- During exam: Checks connectivity every `check_interval_seconds`
+- If connectivity detected: Pauses exam until student disconnects
+- All checks are logged to `session.log`
+
+**Use case:** Enable for high-stakes exams where offline work is mandatory.
+
+### 2.2 AI Detection Configuration
+
+Controls whether the exam system detects and blocks AI coding assistants.
+
+```json
+"ai_detection": {
+  "enabled": true,
+  "check_interval_seconds": 60
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable/disable AI tool detection |
+| `check_interval_seconds` | integer | `60` | How often to check for AI tools during exam (in seconds) |
+
+**Behavior when enabled:**
+- Pre-exam check: Blocks exam start if AI tools detected (GitHub Copilot, Tabnine, Cursor, Codeium, etc.)
+- During exam: Monitors for AI tools every `check_interval_seconds`
+- Detects: Running processes, clipboard patterns, suspicious paste activity
+- All detections are logged to `session.log`
+
+**Use case:** Enable to prevent use of AI autocomplete tools. Set `enabled: false` for practice exams or collaborative sessions.
 
 ---
 
@@ -325,6 +383,14 @@ Use `tools/verify_bank.py` to enforce these rules:
 {
   "group": "group1",
   "version": "2025.11.01",
+  "network_monitoring": {
+    "enabled": false,
+    "check_interval_seconds": 15
+  },
+  "ai_detection": {
+    "enabled": true,
+    "check_interval_seconds": 60
+  },
   "difficulties": {
     "easy": [
       {
@@ -403,6 +469,7 @@ Use `tools/verify_bank.py` to enforce these rules:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-11-01 | Initial schema specification |
+| 1.1 | 2025-11-07 | Added optional `network_monitoring` and `ai_detection` configuration objects |
 
 ---
 

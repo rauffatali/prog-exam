@@ -204,6 +204,7 @@ class ExamConfig:
     medium_weight: float
     hard_weight: float
     max_points: float
+    exam_time_minutes: int
     
     @staticmethod
     def from_dict(data: dict) -> 'ExamConfig':
@@ -216,7 +217,8 @@ class ExamConfig:
             easy_weight=float(data.get('easy_weight', 5.0)),
             medium_weight=float(data.get('medium_weight', 5.0)),
             hard_weight=float(data.get('hard_weight', 5.0)),
-            max_points=float(data.get('max_points', 15.0))
+            max_points=float(data.get('max_points', 15.0)),
+            exam_time_minutes=data.get('exam_time_minutes', 120)
         )
     
     def validate(self) -> tuple[bool, str]:
@@ -244,6 +246,10 @@ class ExamConfig:
                                 self.hard_weight, self.max_points]):
             return False, "All values must be non-negative"
         
+        # Check exam time is reasonable (at least 1 minute, max 8 hours)
+        if self.exam_time_minutes < 1 or self.exam_time_minutes > 480:
+            return False, "Exam time must be between 1 and 480 minutes (8 hours)"
+        
         return True, ""
     
     def get_difficulty_weight(self, difficulty: str) -> float:
@@ -267,7 +273,8 @@ class ExamConfig:
             easy_weight=5.0,
             medium_weight=5.0,
             hard_weight=5.0,
-            max_points=15.0
+            max_points=15.0,
+            exam_time_minutes=120 # 2 hours
         )
 
 
