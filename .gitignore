@@ -6,13 +6,12 @@
 *.key
 
 # Plaintext question banks (must remain in private repository only)
-banks/*.json
-banks/*.enc
+banks/group*.json
+banks/group*.enc
 banks/*.py
 
 # Temporary/test banks
 *_sample.json
-*_test.json
 
 # === STANDARD PYTHON ===
 
@@ -57,6 +56,8 @@ documentations/
 
 # Student working directories (if testing locally)
 *_TP_EVAL/
+*_TP_TEST/
+*_TP_EXAM/
 
 # Results and logs (if testing locally)
 results.txt

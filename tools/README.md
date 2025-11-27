@@ -14,8 +14,6 @@
 | `rotate_key.py` | Re-encrypt with new key/password | Post-exam (before reuse) |
 | `config_helper.py` | Create/validate exam config | Before exam deployment (set parameters) |
 
-**NEW:** All tools now support **password-based encryption** in addition to key files!  
-**NEW:** `config_helper.py` tool for creating and validating teacher exam configurations!
 
 ---
 
@@ -79,7 +77,7 @@ python tools/build_bank.py \
   --key-file GROUP1.key
 ```
 
-**Usage with password (NEW):**
+**Usage with password:**
 ```bash
 python tools/build_bank.py \
   --in bank_group1.json \
@@ -126,7 +124,7 @@ python tools/verify_bank.py \
   --key-file GROUP1.key
 ```
 
-**Encrypted bank (password, NEW):**
+**Encrypted bank (password):**
 ```bash
 python tools/verify_bank.py \
   --bank banks/bank_group1.enc \
@@ -174,7 +172,7 @@ python tools/rotate_key.py \
   --new-key-file GROUP1_2026.key
 ```
 
-**Usage (password to password, NEW):**
+**Usage (password to password):**
 ```bash
 python tools/rotate_key.py \
   --in banks/bank_group1.enc \
@@ -183,7 +181,7 @@ python tools/rotate_key.py \
   --new-password
 ```
 
-**Usage (key file to password, NEW):**
+**Usage (key file to password):**
 ```bash
 python tools/rotate_key.py \
   --in banks/bank_group1.enc \
@@ -192,7 +190,7 @@ python tools/rotate_key.py \
   --new-password
 ```
 
-**Usage (password to key file, NEW):**
+**Usage (password to key file):**
 ```bash
 python tools/rotate_key.py \
   --in banks/bank_group1.enc \
@@ -233,7 +231,7 @@ python tools/config_helper.py
 1. **Create new configuration** - Interactive prompts for all parameters
 2. **Validate existing configuration** - Check config file for errors
 3. **Show example configurations** - Display common config patterns
-4. **Save to file** - Write configuration to `exam_config.json`
+4. **Save to file** - Write configuration to `config.json`
 
 **Interactive Example:**
 ```bash
@@ -263,6 +261,11 @@ Now specify the point value for each difficulty level:
 Calculated maximum points: 15.0
 Is this correct? (y/n): y
 
+Now specify exam parameters:
+  Exam time limit in minutes (default: 180, -1 for unlimited): -1
+  → Exam time set to unlimited
+  Work directory postfix (default: TP_TEST): TP_TEST
+
 Configuration created successfully!
 {
   "total_questions": 3,
@@ -272,12 +275,14 @@ Configuration created successfully!
   "easy_weight": 5.0,
   "medium_weight": 5.0,
   "hard_weight": 5.0,
-  "max_points": 15.0
+  "max_points": 15.0,
+  "exam_time_minutes": 180,
+  "work_dir_postfix": "TP_TEST"
 }
 
-Save to exam_config.json? (y/n): y
+Save to config.json? (y/n): y
 
-✓ Configuration saved to: exam_config.json
+✓ Configuration saved to: config.json
 ```
 
 **Validate Example:**
@@ -286,10 +291,10 @@ python tools/config_helper.py
 
 Enter your choice (1-4): 2
 
-Enter config file path (default: exam_config.json): 
+Enter config file path (default: config.json): 
 
 CONFIG VALIDATOR
-Validating: exam_config.json
+Validating: config.json
 
 Configuration:
   Total Questions: 3
@@ -297,6 +302,8 @@ Configuration:
   Medium: 1 × 5.0 pts = 5.0 pts
   Hard:   1 × 5.0 pts = 5.0 pts
   Maximum Points: 15.0
+  Exam Time: 180 minutes (use -1 for unlimited time)
+  Work Directory Postfix: TP_TEST
 
 ✓ Configuration is VALID!
 ```
@@ -305,13 +312,15 @@ Configuration:
 - Question counts sum to total_questions
 - Point weights sum to max_points
 - All values are non-negative
+- Exam time is -1 (unlimited) or positive integer
+- Work directory postfix is valid string
 - JSON syntax is valid
 
 **Output:**
-- Creates/validates `exam_config.json` in current directory
+- Creates/validates `config.json` in current directory
 - Config file will be automatically loaded by exam system
 
-**Note:** Place the `exam_config.json` file in the same directory as the exam executable for deployment.
+**Note:** Place the `config.json` file in the same directory as the exam executable for deployment.
 
 For detailed information about exam configuration, see: `../documentations/TEACHER_CONFIG_GUIDE.md`
 
@@ -343,7 +352,7 @@ python tools/verify_bank.py \
   --key-file GROUP1.key
 ```
 
-### New Bank Creation (Password Method, NEW)
+### New Bank Creation (Password Method)
 
 ```bash
 # 1. Author plaintext bank (manual)
@@ -398,7 +407,7 @@ python tools/verify_bank.py \
 # 4. Archive old key securely
 ```
 
-### Post-Exam Password Rotation (NEW)
+### Post-Exam Password Rotation
 
 ```bash
 # 1. Change password
@@ -582,7 +591,7 @@ python tools/rotate_key.py --help
 
 ---
 
-**Tools Version:** 1.1 (Added password-based encryption)  
+**Tools Version:** 0.1.2  
 **Last Updated:** 2025-11-01  
 **Status:** Production Ready
 

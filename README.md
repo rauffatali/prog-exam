@@ -1,6 +1,6 @@
 # Offline Python Exam System — Teacher Guide
 
-**Version:** 1.2  
+**Version:** 0.1.2  
 **Last Updated:** 2025-11-03  
 **Target Audience:** Exam Teachers and Technical Staff
 
@@ -26,6 +26,7 @@
 - Type commands to view tasks (`q1`, `q2`, `q3`, ...)
 - Edit Python files in their preferred editor
 - Test their code (`test q1`)
+- Debug their code (`debug q1`)
 - Submit solutions (`submit q1`)
 - Finish exam (`finish`) → creates ZIP file
 
@@ -34,7 +35,7 @@
 - Decryption key (provided by coordinator)
 - Python 3.10+ with virtual environment
 - Exam runner application
-- **(Optional)** Exam configuration file (`exam_config.json`)
+- **(Optional)** Exam configuration file (`config.json`)
 
 ---
 
@@ -46,15 +47,15 @@
 - [ ] Encrypted question bank file (`bank_group1.enc` or `bank_group2.enc`)
 - [ ] Decryption key (Base64 string like `EE2GANWkqT...` OR password)
 - [ ] Exam system files (full `prog-exam/` directory)
-- [ ] **(Optional)** Exam configuration file (`exam_config.json`)
+- [ ] **(Optional)** Exam configuration file (`config.json`)
 
 **Key security:**
 - Store key in password manager OR sealed envelope
 - **Never save key on student machines**
-- Use separate keys for Group 1 and Group 2
+- Use separate keys for each group
 
 **Configuration (Optional):**
-- If provided, `exam_config.json` customizes exam parameters
+- If provided, `config.json` customizes exam parameters
 - Controls number of questions, difficulty distribution, point weights
 - See [Exam Configuration](#exam-configuration-optional) section below
 
@@ -73,13 +74,31 @@
 3. Test decryption (optional, if you have key):
    ```powershell
    cd prog-exam
+   # Option A: Using key file
    python tools\verify_bank.py --bank banks\bank_group1.enc --key-file GROUP1.key
+
+   # Option B: Using password directly
+   python tools\verify_bank.py --bank banks\bank_group1.enc --password
    ```
    Expected: `[OK] Bank validation PASSED`
 
+4. Test the full exam system:
+   ```powershell
+   cd prog-exam
+
+   # Option A: Test with encrypted bank (requires key)
+   python main.py --bank bank_group1.enc
+   # Enter the decryption key when prompted
+   # Expected: System starts and prompts for student authentication
+
+   # Option B: Direct test with bank_test.json (no key needed)
+   python main.py --bank bank_test.json
+   ```
+   This tests the complete exam workflow using either encrypted or unencrypted question banks.
+
 ---
 
-## Exam Configuration (Optional)
+## Exam Configuration
 
 Teachers can customize exam parameters using a configuration file.
 
@@ -89,6 +108,8 @@ Teachers can customize exam parameters using a configuration file.
 - **Distribution of difficulty** (how many easy, medium, hard)
 - **Point weights** for each difficulty level (default: 5 points each)
 - **Maximum total points** for the exam (default: 15)
+- **Exam time limit** in minutes (default: 180, -1 for unlimited time)
+- **Working directory postfix** for student folders (default: "TP_TEST")
 
 ### Creating a Configuration
 
@@ -116,12 +137,12 @@ Now specify the point value for each difficulty level:
 Calculated maximum points: 15.0
 Is this correct? (y/n): y
 
-Save to exam_config.json? (y/n): y
+Save to config.json? (y/n): y
 ```
 
 **Option 2: Edit Manually**
 
-Edit `exam_config.json`:
+Edit `config.json`:
 ```json
 {
   "total_questions": 3,
@@ -131,7 +152,9 @@ Edit `exam_config.json`:
   "easy_weight": 5.0,
   "medium_weight": 5.0,
   "hard_weight": 5.0,
-  "max_points": 15.0
+  "max_points": 15.0,
+  "exam_time_minutes": 180,
+  "work_dir_postfix": "TP_TEST"
 }
 ```
 
@@ -155,7 +178,9 @@ python tools\config_helper.py
   "total_questions": 3,
   "easy_count": 1, "medium_count": 1, "hard_count": 1,
   "easy_weight": 5.0, "medium_weight": 5.0, "hard_weight": 5.0,
-  "max_points": 15.0
+  "max_points": 15.0,
+  "exam_time_minutes": 180,
+  "work_dir_postfix": "TP_EVAL"
 }
 ```
 
@@ -165,7 +190,9 @@ python tools\config_helper.py
   "total_questions": 3,
   "easy_count": 1, "medium_count": 1, "hard_count": 1,
   "easy_weight": 3.0, "medium_weight": 5.0, "hard_weight": 7.0,
-  "max_points": 15.0
+  "max_points": 15.0,
+  "exam_time_minutes": 180,
+  "work_dir_postfix": "TP_TEST"
 }
 ```
 
@@ -175,19 +202,21 @@ python tools\config_helper.py
   "total_questions": 5,
   "easy_count": 2, "medium_count": 2, "hard_count": 1,
   "easy_weight": 3.0, "medium_weight": 4.0, "hard_weight": 6.0,
-  "max_points": 20.0
+  "max_points": 20.0,
+  "exam_time_minutes": 180,
+  "work_dir_postfix": "TP_EXAM"
 }
 ```
 
 ### Deploying with Configuration
 
-1. Create or obtain `exam_config.json`
+1. Create or obtain `config.json`
 2. Place it in the same directory as the exam executable (or `main.py`)
 3. Deploy both together to student machines
 
 **If no configuration file is provided:** System uses default values (3 questions, 15 points, equal weights).
 
-**For more details:** See `documentations/TEACHER_CONFIG_GUIDE.md`
+**For more details:** See `tools/README.md`
 
 ---
 
@@ -242,7 +271,7 @@ chmod +x scripts/build_unix.sh
 ```
 prog-exam/
 ├── exam.exe            ← Built executable (Windows)
-├── exam_config.json    ← (Optional) Configuration file
+├── config.json         ← (Optional) Configuration file
 └── banks/
     ├── bank_group1.enc
     └── bank_group2.enc
@@ -250,12 +279,12 @@ prog-exam/
 
 **Run executable:**
 ```powershell
-.\exam.exe --group 1
+.\exam.exe --bank bank_group1.enc
 ```
 No Python installation or virtual environment needed on student machines!
 
 **With custom configuration:**
-Place `exam_config.json` in the same directory as `exam.exe`. The system will automatically load it on startup.
+Place `config.json` in the same directory as `exam.exe`. The system will automatically load it on startup.
 
 **Note:** Executable is ~15-25 MB. If size is a concern, use virtual environment method below.
 
@@ -362,17 +391,15 @@ All should return `True`.
    **If using executable:**
    ```powershell
    cd C:\prog-exam
-   .\exam.exe --group 1
+   .\exam.exe --bank bank_group1.enc
    ```
    
    **If using virtual environment:**
    ```powershell
    cd C:\prog-exam
    .\.venv\Scripts\Activate.ps1
-   python main.py --group 1
+   python main.py --bank bank_group1.enc
    ```
-   
-   (Use `--group 2` for Group 2)
 
 2. **Enter decryption key:**
    - System prompts: `Enter decryption key for Group 1:`
@@ -423,13 +450,13 @@ Students can now type commands.
 
 **If using executable:**
 ```powershell
-.\exam.exe --group 1
+.\exam.exe --bank bank_group1.enc
 ```
 
 **If using virtual environment:**
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python main.py --group 1
+python main.py --bank bank_group1.enc
 ```
 
 Then:
@@ -449,9 +476,10 @@ Then:
 1. Type `q1`, `q2`, `q3`, etc. to view tasks (number depends on configuration)
 2. Edit Python files (`q1.py`, `q2.py`, `q3.py`, etc.) in any text editor
 3. Test code: `test q1`
-4. Submit solution: `submit q1`
-5. Check progress: `status`
-6. Finish exam: `finish` (creates ZIP file)
+4. Debug code: `debug q1`
+5. Submit solution: `submit q1`
+6. Check progress: `status`
+7. Finish exam: `finish` (creates ZIP file)
 
 **Note:** Default is 3 questions. If using custom configuration, students may have more questions (e.g., q1 through q5).
 
@@ -497,6 +525,64 @@ exam> status
 Get-Content jane_doe_TP_EVAL\session.log -Tail 10
 ```
 
+### Debugging Test Failures
+
+#### Using Debug Mode
+
+Debug mode helps diagnose why tests fail, especially useful for cross-platform issues.
+
+**When to use:**
+- Code works on one machine but fails on another
+- Need to see actual error messages
+- Want to understand why tests are failing
+
+**How to use:**
+
+**Method 1: Debug Command**
+```
+exam> debug q1
+```
+
+Shows:
+- Error messages (stderr) for runtime errors
+- Student's actual output vs expected output
+- Function arguments (for function-mode tests)
+- Full error details
+
+**Example output:**
+```
+Test # 1:  PASSED (3 ms)
+Test # 2:  FAILED (Wrong Answer)
+         Args: ['hello']
+         Your output: 6
+         Expected: 5
+Test # 3:  FAILED (Runtime Error)
+         Error: NameError: name 'result' is not defined
+```
+
+**Method 2: Environment Variable**
+
+Set `EXAM_DEBUG=1` to enable detailed output for all `test` commands:
+
+```powershell
+# Windows
+$env:EXAM_DEBUG = "1"
+.\exam.exe --bank bank_group1.enc
+
+# Linux/macOS
+export EXAM_DEBUG=1
+python main.py --bank bank_group1.enc
+```
+
+**Important Notes:**
+- Debug mode reveals test outputs - use only for practice/troubleshooting
+- For actual exams, use regular `test` command (keeps tests hidden)
+- Debug mode helps identify:
+  - Import errors from isolation flags
+  - Line ending differences (Windows vs Unix)
+  - Type mismatches
+  - Logic errors in student code
+
 ---
 
 ## After Exam (Collection)
@@ -539,66 +625,6 @@ JANE_DOE_TP_EVAL.zip
 ```
 
 **Note:** Number of `.py` files depends on exam configuration (default: 3).
-
----
-
-## Debugging Test Failures
-
-### Using Debug Mode
-
-Debug mode helps diagnose why tests fail, especially useful for cross-platform issues.
-
-**When to use:**
-- Code works on one machine but fails on another
-- Need to see actual error messages
-- Want to understand why tests are failing
-
-**How to use:**
-
-**Method 1: Debug Command**
-```
-exam> debug q1
-```
-
-Shows:
-- Error messages (stderr) for runtime errors
-- Student's actual output vs expected output
-- Function arguments (for function-mode tests)
-- Full error details
-
-**Example output:**
-```
-Test # 1:  PASSED (3 ms)
-Test # 2:  FAILED (Wrong Answer)
-         Args: ['hello']
-         Your output: 6
-         Expected: 5
-Test # 3:  FAILED (Runtime Error)
-         Error: NameError: name 'result' is not defined
-```
-
-**Method 2: Environment Variable**
-
-Set `EXAM_DEBUG=1` to enable detailed output for all `test` commands:
-
-```powershell
-# Windows
-$env:EXAM_DEBUG = "1"
-.\exam.exe --group 1
-
-# Linux/macOS
-export EXAM_DEBUG=1
-python main.py --group 1
-```
-
-**Important Notes:**
-- Debug mode reveals test outputs - use only for practice/troubleshooting
-- For actual exams, use regular `test` command (keeps tests hidden)
-- Debug mode helps identify:
-  - Import errors from isolation flags
-  - Line ending differences (Windows vs Unix)
-  - Type mismatches
-  - Logic errors in student code
 
 ---
 
@@ -681,14 +707,14 @@ Compress-Archive -Path * -DestinationPath ..\JANE_DOE_TP_EVAL.zip
    **If using executable:**
    ```powershell
    cd C:\prog-exam
-   .\exam.exe --group 1
+   .\exam.exe --bank bank_group1.enc
    ```
    
    **If using virtual environment:**
    ```powershell
    cd C:\prog-exam
    .\.venv\Scripts\Activate.ps1
-   python main.py --group 1
+   python main.py --bank bank_group1.enc
    ```
 3. Enter key
 4. Student enters same name → resumes
@@ -723,7 +749,6 @@ TESTING CODE:
   test q1            Run all tests for question 1
   test q2            Run all tests for question 2
   test q3            Run all tests for question 3
-  debug q1           Run tests with detailed error output (debugging)
 
 SUBMITTING:
   submit q1          Submit your solution for q1
@@ -775,7 +800,7 @@ cd prog-exam
 python tools\config_helper.py
 # Choose option 1, follow prompts
 ```
-Output: `exam_config.json` (place next to executable)
+Output: `config.json` (place next to executable)
 
 **Or validate existing config:**
 ```powershell
@@ -816,7 +841,7 @@ pip install -r requirements.txt
 **Executable:**
 ```powershell
 cd C:\prog-exam
-.\exam.exe --group 1
+.\exam.exe --bank bank_group1.enc
 # Enter decryption key
 ```
 
@@ -824,20 +849,20 @@ cd C:\prog-exam
 ```powershell
 cd C:\prog-exam
 .\.venv\Scripts\Activate.ps1
-python main.py --group 1
+python main.py --bank bank_group1.enc
 # Enter decryption key
 ```
 
 ### Restart After Crash
 **Executable:** `.\exam.exe --group 1`  
-**Virtual Env:** `.\.venv\Scripts\Activate.ps1` then `python main.py --group 1`  
+**Virtual Env:** `.\.venv\Scripts\Activate.ps1` then `python main.py --bank bank_group1.enc`  
 Then: Enter key → Student enters same name → resumes
 
 ---
 
 **For full technical documentation, see:**
 - `tools/README.md` — Bank management & config helper tool
-- `banks/bank_schema.md` — Question bank format
+- `banks/README.md` — Question bank format
 - `runner/grader.py` — Grading implementation with debug support
 
 

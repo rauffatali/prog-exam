@@ -61,7 +61,29 @@ def create_config_interactive():
             max_points = float(input("Enter the correct maximum points: "))
         else:
             max_points = calculated_max
-        
+
+        # Get exam time
+        print("\nNow specify exam parameters:")
+        exam_time_input = input("  Exam time limit in minutes (default: 180, -1 for unlimited): ").strip()
+        if not exam_time_input:
+            exam_time_minutes = 180
+        else:
+            exam_time_minutes = int(exam_time_input)
+
+        if exam_time_minutes < -1:
+            print("Error: Exam time must be -1 (unlimited) or positive.")
+            return None
+        elif exam_time_minutes == -1:
+            print("  → Exam time set to unlimited")
+        elif exam_time_minutes <= 0:
+            print("Error: Exam time must be -1 (unlimited) or positive.")
+            return None
+
+        # Get work directory postfix
+        work_dir_postfix = input("  Work directory postfix (default: TP_TEST): ").strip() or "TP_TEST"
+        if not work_dir_postfix.strip():
+            work_dir_postfix = "TP_TEST"
+
         # Create config
         config_dict = {
             "total_questions": total_questions,
@@ -71,7 +93,9 @@ def create_config_interactive():
             "easy_weight": easy_weight,
             "medium_weight": medium_weight,
             "hard_weight": hard_weight,
-            "max_points": max_points
+            "max_points": max_points,
+            "exam_time_minutes": exam_time_minutes,
+            "work_dir_postfix": work_dir_postfix
         }
         
         return config_dict
@@ -110,6 +134,14 @@ def validate_config_file(config_path: Path):
         print(f"  Medium: {config.medium_count} × {config.medium_weight} pts = {config.medium_count * config.medium_weight} pts")
         print(f"  Hard:   {config.hard_count} × {config.hard_weight} pts = {config.hard_count * config.hard_weight} pts")
         print(f"  Maximum Points: {config.max_points}")
+        exam_time = getattr(config, 'exam_time_minutes', None)
+        if exam_time == -1:
+            print("  Exam Time: Unlimited")
+        elif exam_time is not None:
+            print(f"  Exam Time: {exam_time} minutes")
+        else:
+            print("  Exam Time: Not set")
+        print(f"  Work Directory Postfix: {getattr(config, 'work_dir_postfix', 'Not set')}")
         print()
         
         # Validate
@@ -148,7 +180,9 @@ def show_examples():
                 "easy_weight": 5.0,
                 "medium_weight": 5.0,
                 "hard_weight": 5.0,
-                "max_points": 15.0
+                "max_points": 15.0,
+                "exam_time_minutes": 180,
+                "work_dir_postfix": "TP_EVAL"
             }
         },
         {
@@ -161,7 +195,9 @@ def show_examples():
                 "easy_weight": 3.0,
                 "medium_weight": 5.0,
                 "hard_weight": 7.0,
-                "max_points": 15.0
+                "max_points": 15.0,
+                "exam_time_minutes": 180,
+                "work_dir_postfix": "TP_TEST"
             }
         },
         {
@@ -174,7 +210,9 @@ def show_examples():
                 "easy_weight": 3.0,
                 "medium_weight": 4.0,
                 "hard_weight": 6.0,
-                "max_points": 20.0
+                "max_points": 20.0,
+                "exam_time_minutes": 180,
+                "work_dir_postfix": "TP_EXAM"
             }
         },
         {
@@ -187,7 +225,9 @@ def show_examples():
                 "easy_weight": 4.0,
                 "medium_weight": 4.0,
                 "hard_weight": 4.0,
-                "max_points": 16.0
+                "max_points": 16.0,
+                "exam_time_minutes": 180,
+                "work_dir_postfix": "TP_PROG"
             }
         }
     ]
@@ -225,10 +265,10 @@ def main():
                 print(json.dumps(config_dict, indent=2))
                 print()
                 
-                save = input("Save to exam_config.json? (y/n): ").strip().lower()
+                save = input("Save to config.json? (y/n): ").strip().lower()
                 if save == 'y':
                     # Determine save location (project root)
-                    save_path = Path.cwd() / "exam_config.json"
+                    save_path = Path.cwd() / "config.json"
                     
                     if save_path.exists():
                         overwrite = input("File exists. Overwrite? (y/n): ").strip().lower()
@@ -247,9 +287,9 @@ def main():
         
         elif choice == '2':
             print()
-            config_file = input("Enter config file path (default: exam_config.json): ").strip()
+            config_file = input("Enter config file path (default: config.json): ").strip()
             if not config_file:
-                config_file = "exam_config.json"
+                config_file = "config.json"
             
             validate_config_file(Path(config_file))
         

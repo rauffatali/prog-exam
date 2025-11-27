@@ -6,12 +6,15 @@ Provides cross-platform detection of AI tools and usage patterns.
 """
 
 import os
+import re
 import json
 import time
 import platform
 import subprocess
 import threading
 from typing import List, Optional, Tuple
+
+from .ai_tools_config import AI_PROCESSES, LLM_PROCESSES, AI_EXTENSION_META
 
 
 class AIDetector:
@@ -23,61 +26,13 @@ class AIDetector:
         self.detection_thread = None
         
         # Known AI coding assistants (process names)
-        self.ai_processes = {
-            'windows': [
-                'github.copilot',
-                'copilot',
-                'tabnine',
-                'kite',
-                'intellicode',
-                'codex',
-                # 'cursor',
-                'windsor',
-                'continue',
-                'codium',
-                'codewhisperer',
-                'aws-toolkit',
-                'genie',
-                'blackbox',
-                'askcodi',
-                'mutableai',
-                'replit-ghostwriter',
-                'refact',
-                'codegeex',
-                'codeium'
-            ],
-            'linux': [
-                'copilot',
-                'tabnine',
-                'kite',
-                'cursor',
-                'codium',
-                'codewhisperer',
-                'genie',
-                'blackbox',
-                'askcodi',
-                'mutableai',
-                'refact',
-                'codegeex',
-                'codeium'
-            ],
-            'darwin': [  # macOS
-                'copilot',
-                'tabnine',
-                'kite',
-                'cursor',
-                'codium',
-                'codewhisperer',
-                'genie',
-                'blackbox',
-                'askcodi',
-                'mutableai',
-                'refact',
-                'codegeex',
-                'codeium'
-            ]
-        }
-        
+        self.ai_processes = AI_PROCESSES
+
+        # Known LLM platforms and AI tools (process names)
+        self.llm_processes = LLM_PROCESSES
+
+        # AI extension metadata (for enablement checks)
+        self.ai_extension_meta = AI_EXTENSION_META
 
         # Detection state
         self.last_clipboard_content = ""
@@ -144,7 +99,7 @@ class AIDetector:
         if system not in self.ai_processes:
             return
         
-        target_processes = self.ai_processes[system]
+        target_processes = self.ai_processes[system] + self.llm_processes[system]
         running_ai_processes = []
         
         try:
@@ -228,7 +183,8 @@ class AIDetector:
                     if len(parts) >= 11:  # Standard ps aux format
                         command_line = ' '.join(parts[10:]).lower()
                         for ai_proc in target_processes:
-                            if ai_proc.lower() in command_line:
+                            pattern = r'\b' + re.escape(ai_proc.lower()) + r'\b'
+                            if re.search(pattern, command_line):
                                 running_processes.append(ai_proc)
                                 break
             
@@ -242,8 +198,9 @@ class AIDetector:
                         cmdline = ' '.join(proc.info.get('cmdline', [])).lower()
                         
                         for ai_proc in target_processes:
-                            if (ai_proc.lower() in proc_name or 
-                                ai_proc.lower() in cmdline):
+                            pattern = r'\b' + re.escape(ai_proc.lower()) + r'\b'
+                            if (re.search(pattern, proc_name) or 
+                                re.search(pattern, cmdline)):
                                 running_processes.append(proc_name)
                                 break
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -426,81 +383,165 @@ class AIDetector:
         # Reset counter but keep monitoring
         self.suspicious_paste_count = 0
     
-    def _check_vscode_extensions(self) -> List[str]:
-        """Check for AI extensions installed in VS Code."""
-        system = platform.system().lower()
-        detected_extensions = set()
-        
-        # VS Code extensions directory
+    def _get_vscode_extensions_via_cli(self, system: str) -> List[str]:
+        """Get installed VS Code extensions using CLI."""
+        try:
+            if system == "windows":
+                cmd = ['code.cmd', '--list-extensions']
+            else:
+                cmd = ['code', '--list-extensions']
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return [line.strip() for line in result.stdout.split('\n') if line.strip()]
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+            pass
+        return []
+    
+    def _get_vscode_extensions_dir(self, system: str) -> str:
+        """Get VS Code extensions directory cross-platform."""
         if system == "windows":
-            vscode_ext_dir = os.path.expandvars(r"%USERPROFILE%\.vscode\extensions")
-        else:
-            vscode_ext_dir = os.path.expanduser("~/.vscode/extensions")
+            return os.path.expandvars(r"%USERPROFILE%\.vscode\extensions")
+        else:  # Linux
+            return os.path.expanduser("~/.vscode/extensions")
+    
+    def _check_vscode_extensions(self, system: str) -> List[str]:
+        """Check for AI extensions installed in VS Code."""
+        detected_extensions = set()
+
+        # VS Code CLI
+        cli_extensions = self._get_vscode_extensions_via_cli(system)
+        if cli_extensions:
+            # Filter for AI extensions
+            for ext in cli_extensions:
+                for ai_ext in self.ai_extension_meta.keys():
+                    if ext.startswith(ai_ext):
+                        detected_extensions.add(ext)
+                        break
+            return list(detected_extensions)
         
-        # AI extensions to look for
-        ai_extensions = [
-            'github.copilot',
-            'tabnine.tabnine-vscode',
-            'visualstudioexptteam.vscodeintellicode',
-            'codeium.codeium',
-            'amazonwebservices.aws-toolkit-vscode',
-            'blackboxapp.blackbox',
-            'askcodi.askcodi',
-            'mutable-ai.mutable-ai',
-            'refact.refact',
-            'aminer.codegeex',
-            'continue.continue'
-        ]
-        
-        if os.path.exists(vscode_ext_dir):
+        # Fallback: Check folders
+        ext_dir = self._get_vscode_extensions_dir(system)
+        if os.path.exists(ext_dir):
             try:
-                for item in os.listdir(vscode_ext_dir):
-                    for ai_ext in ai_extensions:
+                for item in os.listdir(ext_dir):
+                    for ai_ext in self.ai_extension_meta.keys():
                         if item.startswith(ai_ext):
-                            detected_extensions.add(ai_ext)
+                            # Optional: Validate with package.json to avoid old leftovers
+                            package_path = os.path.join(ext_dir, item, 'package.json')
+                            if os.path.exists(package_path):
+                                detected_extensions.add(item)
                             break
             except (PermissionError, OSError):
                 pass
         
-        return detected_extensions
+        return list(detected_extensions)
     
-    def _check_vscode_copilot_enabled(self) -> Tuple[bool, str]:
-        """Check if GitHub Copilot is enabled in VS Code settings."""
-        system = platform.system().lower()
+    def _check_vscode_global_disabled(self, system: str) -> set:
+        """Check globally disabled extensions from VS Code's state database."""
+        disabled = set()
         
-        # VS Code settings path
+        # Path to VS Code's global state database
+        if system == "windows":
+            db_path = os.path.expandvars(r"%APPDATA%\Code\User\globalStorage\state.vscdb")
+        elif system == "darwin":
+            db_path = os.path.expanduser("~/Library/Application Support/Code/User/globalStorage/state.vscdb")
+        else:  # Linux
+            db_path = os.path.expanduser("~/.config/Code/User/globalStorage/state.vscdb")
+        
+        if not os.path.exists(db_path):
+            return disabled
+        
+        try:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            # Query for disabled extensions (stored as JSON)
+            cursor.execute("SELECT value FROM ItemTable WHERE key = 'extensionsIdentifiers/disabled'")
+            row = cursor.fetchone()
+            if row:
+                data = json.loads(row[0])
+                if isinstance(data, list):
+                    for ext_obj in data:
+                        if isinstance(ext_obj, dict) and 'id' in ext_obj:
+                            disabled.add(ext_obj['id'])
+                elif isinstance(data, dict):
+                    disabled.update(data.get('extensions', {}).keys())
+            conn.close()
+        except (ImportError, sqlite3.Error, json.JSONDecodeError):
+            pass
+    
+        return disabled
+    
+    def _check_vscode_extension_enabled(self, extension: str, system: str) -> Tuple[bool, str]:
+        """Check if an AI extension is enabled, considering defaults and global state."""
+        if extension not in self.ai_extension_meta:
+            return False, "Unknown extension"
+        
+        meta = self.ai_extension_meta[extension]
+        global_disabled = self._check_vscode_global_disabled(system)
+        
+        # If globally disabled, it's off
+        if extension in global_disabled:
+            return False, "Disabled globally"
+        
+        # Load user settings
+        settings = self._load_vscode_settings(system)
+        
+        # Check specific settings
+        if meta['settings_keys']:
+            for key, disable_val in zip(meta['settings_keys'], meta['disable_values']):
+                setting_val = self._get_nested_setting(settings, key)
+                if setting_val is not None:
+                    if isinstance(setting_val, dict):
+                        # Language-specific: enabled if any is True
+                        if any(setting_val.values()):
+                            enabled_langs = [k for k, v in setting_val.items() if v]
+                            return True, f"Enabled for: {', '.join(enabled_langs)}"
+                        else:
+                            return False, "Disabled for all languages"
+                    elif setting_val != disable_val:
+                        return True, f"Enabled via {key}"
+                    else:
+                        return False, f"Disabled via {key}"
+        
+        # No explicit settings: use default
+        return meta['default_enabled'], "Default state (no override)"
+
+    def _load_vscode_settings(self, system: str) -> dict:
+        """Load VS Code user settings.json."""
         if system == "windows":
             settings_path = os.path.expandvars(r"%APPDATA%\Code\User\settings.json")
-        elif system == "darwin":  # macOS
+        elif system == "darwin":
             settings_path = os.path.expanduser("~/Library/Application Support/Code/User/settings.json")
         else:  # Linux
             settings_path = os.path.expanduser("~/.config/Code/User/settings.json")
         
         if not os.path.exists(settings_path):
-            return False, "VS Code settings not found"
+            return {}
         
         try:
             with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-            
-            # Check Copilot enable setting
-            copilot_enabled = settings.get("github.copilot.enable", {})
-            
-            # Can be boolean or dict with language-specific settings
-            if isinstance(copilot_enabled, dict):
-                # Check if enabled for any language
-                if any(copilot_enabled.values()):
-                    enabled_langs = [k for k, v in copilot_enabled.items() if v]
-                    return True, f"Enabled for: {', '.join(enabled_langs)}"
-                return False, "Disabled for all languages"
-            elif copilot_enabled:
-                return True, "Enabled globally"
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+
+    def _get_nested_setting(self, settings: dict, key: str):
+        """Get nested setting value (e.g., 'github.copilot.enable')."""
+        keys = key.split('.')
+        current = settings
+        for k in keys:
+            if isinstance(current, dict) and k in current:
+                current = current[k]
             else:
-                return False, "Disabled"
-                
-        except (json.JSONDecodeError, IOError, PermissionError):
-            return False, "Could not read settings"
-    
+                return None
+        return current
+
     def check_ide_ai_tools(self) -> Tuple[bool, List[str]]:
         """
         Comprehensive check for IDE-integrated AI tools.
@@ -508,19 +549,16 @@ class AIDetector:
         Returns:
             Tuple of (ai_detected, list_of_detected_tools)
         """
+        system = platform.system().lower()
         detected = []
         
         # Check VS Code extensions
-        vscode_extensions = self._check_vscode_extensions()
+        vscode_extensions = self._check_vscode_extensions(system)
         if vscode_extensions:
-            for ext in vscode_extensions:    
-                if ext == 'github.copilot':
-                    enabled, details = self._check_vscode_copilot_enabled()
-                    if enabled:
-                        detected.append(f"VS Code: {ext} ({details})")
-                    continue
-                
-                detected.append(f"VS Code: {ext}")
+            for ext in vscode_extensions:
+                enabled, details = self._check_vscode_extension_enabled(ext, system)
+                if enabled:
+                    detected.append(f"VS Code: {ext} ({details})")
         
         # TODO: Add checks for other IDEs (PyCharm, IntelliJ, etc.)
         
@@ -538,10 +576,8 @@ def check_ai_tools_at_startup() -> Tuple[bool, List[str]]:
     
     try:
         system = platform.system().lower()
-        if system == "windows":
-            detected = detector._check_processes_windows(detector.ai_processes.get(system, []))
-        else:
-            detected = detector._check_processes_unix(detector.ai_processes.get(system, []))
+        ai_procs = detector.ai_processes.get(system, []) + detector.llm_processes.get(system, [])
+        detected = detector._check_processes_windows(ai_procs) if system == "windows" else detector._check_processes_unix(ai_procs)
         
         ide_detected, ide_tools = detector.check_ide_ai_tools()
         if ide_detected:

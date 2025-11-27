@@ -66,6 +66,9 @@ class ExamSession:
         
         # Track if session is finalized
         self.is_finished = False
+        
+        # Track failed attempts
+        self.failed_attempts: Dict[str, int] = {}
 
         # AI detection
         self.ai_detector = None
@@ -74,6 +77,7 @@ class ExamSession:
         # Exam timing
         self.exam_start_time: Optional[datetime] = None
         self.exam_end_time: Optional[datetime] = None
+        self.timer_state_path = work_dir / "timer_state.json"
     
     def log(self, event: str, details: str = ""):
         """Append an entry to the session log."""
@@ -87,31 +91,106 @@ class ExamSession:
             f.write(log_entry)
     
     def start_exam_timer(self):
-        """Start the exam timer when the exam begins."""
+        """Start the exam timer when the exam begins, or resume from saved state."""
+        # Try to load existing timer state first
+        if self.load_timer_state():
+            # Successfully loaded existing timer state - resuming
+            if self.exam_end_time is None:
+                duration_log = "infinite"
+            else:
+                remaining_minutes = self.get_remaining_time().total_seconds() / 60
+                duration_log = f"{remaining_minutes:.1f} minutes remaining"
+            self.log("EXAM_RESUME", f"Exam resumed at {datetime.now().strftime('%H:%M:%S')}, {duration_log}")
+            return
+
+        # No existing timer state - starting fresh
         self.exam_start_time = datetime.now()
-        self.exam_end_time = self.exam_start_time + timedelta(minutes=self.config.exam_time_minutes)
-        self.log("EXAM_START", f"Exam started at {self.exam_start_time.strftime('%H:%M:%S')}, duration: {self.config.exam_time_minutes} minutes")
+        if self.config.exam_time_minutes == -1:
+            self.exam_end_time = None  # No time limit
+            duration_log = "infinite"
+        else:
+            self.exam_end_time = self.exam_start_time + timedelta(minutes=self.config.exam_time_minutes)
+            duration_log = f"{self.config.exam_time_minutes} minutes"
+
+        # Save the timer state
+        self.save_timer_state()
+
+        self.log("EXAM_START", f"Exam started at {self.exam_start_time.strftime('%H:%M:%S')}, duration: {duration_log}")
     
     def get_remaining_time(self) -> timedelta:
         """Get the remaining exam time as a timedelta."""
         if self.exam_end_time is None:
-            return timedelta(0)
+            return timedelta.max # Infinite time
         
         remaining = self.exam_end_time - datetime.now()
         return max(remaining, timedelta(0))
         
     def is_time_expired(self) -> bool:
         """Check if exam time has expired."""
+        if self.exam_end_time is None:
+            return False  # No time limit
         return self.get_remaining_time() <= timedelta(0)
     
     def format_remaining_time(self) -> str:
         """Format remaining time as HH:MM:SS."""
+        if self.exam_end_time is None:
+            return "infinite"
+
         remaining = self.get_remaining_time()
         total_seconds = int(remaining.total_seconds())
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         seconds = total_seconds % 60
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    def save_timer_state(self):
+        """Save the current timer state to timer_state.json."""
+        if self.exam_start_time is None:
+            return
+
+        timer_data = {
+            "exam_start_time": self.exam_start_time.isoformat(),
+            "exam_end_time": self.exam_end_time.isoformat() if self.exam_end_time else None,
+            "exam_time_minutes": self.config.exam_time_minutes
+        }
+
+        with open(self.timer_state_path, 'w', encoding='utf-8') as f:
+            json.dump(timer_data, f, indent=2)
+
+    def load_timer_state(self) -> bool:
+        """
+        Load existing timer state if it exists.
+
+        Returns:
+            True if timer state was loaded and is valid, False otherwise
+        """
+        if not self.timer_state_path.exists():
+            return False
+
+        try:
+            with open(self.timer_state_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Verify that the time configuration matches
+            if data.get("exam_time_minutes") != self.config.exam_time_minutes:
+                return False
+
+            # Load the times
+            self.exam_start_time = datetime.fromisoformat(data["exam_start_time"])
+            exam_end_time_str = data.get("exam_end_time")
+            if exam_end_time_str:
+                self.exam_end_time = datetime.fromisoformat(exam_end_time_str)
+            else:
+                self.exam_end_time = None
+
+            # Check if time has already expired
+            if self.is_time_expired():
+                return False
+
+            return True
+
+        except Exception:
+            return False
     
     def save_assignment(self):
         """Save the task assignment to assignment.json."""
@@ -195,7 +274,7 @@ class ExamSession:
                     
                     lines.append(f"  SUBMITTED @ {timestamp}")
                     lines.append(f"  - Score: {score:.2f} / {max_score:.2f} ({passed}/{total} passed)")
-                    
+
                     # List failed test numbers
                     results = sub.get("results", [])
                     failed_nums = [r["test_num"] for r in results if r["status"] != "passed"]
@@ -219,7 +298,7 @@ class ExamSession:
         safe_name = "".join(c if c.isalnum() else '_' for c in self.name.upper())
         safe_surname = "".join(c if c.isalnum() else '_' for c in self.surname.upper())
         
-        zip_filename = f"{safe_name}_{safe_surname}_TP_EVAL.zip"
+        zip_filename = f"{safe_name}_{safe_surname}_{self.config.work_dir_postfix.upper()}.zip"
         # Save in root folder (parent of work_dir)
         zip_path = self.work_dir.parent / zip_filename
         
@@ -267,24 +346,33 @@ class ExamRunner:
         key_material = kdf.derive(password.encode('utf-8'))
         return base64.urlsafe_b64encode(key_material)
     
-    def load_bank(self, key_input: str) -> bool:
+    def load_bank(self, key_input: Optional[str]) -> bool:
         """
         Load and decrypt the question bank.
+        Also supports loading plain JSON files if the extension is .json.
         
         Args:
-            key_input: Encryption key (as string - will be interpreted as password or key)
+            key_input: Encryption key (as string - will be interpreted as password or key).
+                       Not used for .json files.
         
         Returns:
             True if successful, False otherwise
         """
         try:
+            # Check if JSON file and load directly
+            if self.bank_path.suffix.lower() == '.json':
+                with open(self.bank_path, 'r', encoding='utf-8') as f:
+                    bank_dict = json.load(f)
+                self.bank = Bank.from_dict(bank_dict)
+                return True
+
             with open(self.bank_path, 'rb') as f:
                 encrypted_data = f.read()
             
             # Check if password-based encryption (has SALT prefix)
             is_password_based = encrypted_data.startswith(b'SALT')
             
-            if is_password_based:
+            if is_password_based:                
                 # Extract salt and actual encrypted data
                 salt = encrypted_data[4:20]  # 4-byte prefix + 16-byte salt
                 encrypted_data = encrypted_data[20:]
@@ -335,7 +423,7 @@ class ExamRunner:
             # Create working directory: name_surname_TP_EVAL (lowercase)
             safe_name = "".join(c if c.isalnum() else '_' for c in name.lower())
             safe_surname = "".join(c if c.isalnum() else '_' for c in surname.lower())
-            work_dir_name = f"{safe_name}_{safe_surname}_TP_EVAL"
+            work_dir_name = f"{safe_name}_{safe_surname}_{self.config.work_dir_postfix.upper()}"
             work_dir = Path.cwd() / work_dir_name
             
             # Check if directory exists
@@ -459,20 +547,23 @@ class ExamRunner:
         print("OFFLINE PYTHON EXAM SYSTEM")
         print("="*60)
         
-        try:
-            key_input = getpass.getpass(f"Enter decryption password for {args.bank}: ")
-            if not key_input:
-                print("Error: Password cannot be empty.")
-                return 1
+        key_input = None
+        if self.bank_path.suffix.lower() != '.json':
+            try:
+                key_input = getpass.getpass(f"Enter decryption password for {args.bank}: ")
+                if not key_input:
+                    print("Error: Password cannot be empty.")
+                    return 1
             
-            # Strip whitespace
-            key_input = key_input.strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nExiting.")
-            return 1
+                # Strip whitespace
+                key_input = key_input.strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nExiting.")
+                return 1
         
         # Load bank
-        print("\nLoading and decrypting question bank...")
+        action = "Loading JSON" if self.bank_path.suffix.lower() == '.json' else "Loading and decrypting"
+        print(f"\n{action} question bank...")
         if not self.load_bank(key_input):
             return 1
         
@@ -539,7 +630,10 @@ class ExamRunner:
         os.chdir(self.session.work_dir)
 
         self.session.start_exam_timer()
-        print(f"✓ Exam timer started: {self.config.exam_time_minutes} minutes allowed")
+        if self.config.exam_time_minutes == -1:
+            print("✓ Exam timer started: infinite time allowed")
+        else:
+            print(f"✓ Exam timer started: {self.config.exam_time_minutes} minutes allowed")
 
         # Start network monitoring if enabled
         if self.bank.network_monitoring.enabled:
@@ -563,13 +657,17 @@ class ExamRunner:
             self.ai_detector = None
             self.ai_monitor_active = False
 
-        # Start exam timer if enabled
-        self.exam_timer_active = True
-        self.exam_timer_thread = threading.Thread(
-            target=self._monitor_exam_timer,
-            daemon=True
-        )
-        self.exam_timer_thread.start()
+        # Start exam timer if enabled if time is not infinite
+        if self.config.exam_time_minutes != -1:
+            self.exam_timer_active = True
+            self.exam_timer_thread = threading.Thread(
+                target=self._monitor_exam_timer,
+                daemon=True
+            )
+            self.exam_timer_thread.start()
+        else:
+            self.exam_timer_active = False
+            self.exam_timer_thread = None
 
         try:
             self.command_loop()
@@ -646,8 +744,9 @@ class ExamRunner:
                 
                 if has_connectivity:
                     self._handle_network_detected()
-                    break
-                last_check_time = current_time
+                    last_check_time = current_time
+                else:
+                    last_check_time = current_time
             time.sleep(1)  # Avoid busy waiting
     
     def _handle_network_detected(self):
@@ -691,6 +790,9 @@ class ExamRunner:
         
         while not self.session.is_finished:
             try:
+                # Save timer state periodically
+                self.session.save_timer_state()
+
                 # Check if time has expired before each command
                 if self.session.is_time_expired():
                     print("\n⚠️  Exam time finished!")
@@ -700,18 +802,20 @@ class ExamRunner:
                 cmd_line = input("exam> ").strip()
                 if not cmd_line:
                     continue
-                
+
                 parts = cmd_line.split()
                 command = parts[0].lower()
 
                 # Check for file modifications (indicates student editing)
                 self._check_file_modifications()
-                
+
                 # Log command
                 self.session.log("COMMAND_RUN", f"Command: {cmd_line}")
                 
                 # Route command
-                if command in ['exit', 'quit', 'finish']:
+                if command in ['exit', 'quit']:
+                    self.cmd_exit()
+                elif command == 'finish':
                     self.cmd_finish()
                 elif command == 'help':
                     self.cmd_help()
@@ -727,6 +831,11 @@ class ExamRunner:
                         print("Usage: debug qN (e.g., 'debug q1')")
                     else:
                         self.cmd_debug(parts[1].lower())
+                elif command == 'hint':
+                    if len(parts) < 2:
+                        print("Usage: hint qN (e.g., 'hint q1')")
+                    else:
+                        self.cmd_hint(parts[1].lower())
                 elif command == 'submit':
                     if len(parts) < 2:
                         print("Usage: submit qN (e.g., 'submit q1')")
@@ -740,7 +849,7 @@ class ExamRunner:
                     print(f"Unknown command: '{command}'. Type 'help' for a list of commands.")
             
             except (KeyboardInterrupt, EOFError):
-                print("\nUse 'finish' to exit and save your work.")
+                print("\nUse 'exit' to save progress or 'finish' to complete the exam.")
             except Exception as e:
                 print(f"An unexpected error occurred: {e}")
                 self.session.log("ERROR", str(e))
@@ -779,9 +888,11 @@ Available commands:
   {question_list}       Show your assigned prompts.
   test qN          Run hidden tests for question N (e.g., 'test q1').
   debug qN         Run tests with detailed error messages and output comparison.
+  hint qN          Show hints for question N.
   submit qN        Submit your code for question N.
   status           Show your current submission status and scores.
   time             Show remaining exam time.
+  exit             Exit session and save progress (resume later).
   finish           Finalize and package your submission.
   help             Show this help message.
 """
@@ -790,17 +901,21 @@ Available commands:
     def cmd_time(self):
         """Display remaining exam time."""
         remaining_time = self.session.format_remaining_time()
-        total_minutes = self.config.exam_time_minutes
         elapsed_minutes = (datetime.now() - self.session.exam_start_time).total_seconds() / 60
         elapsed_formatted = f"{elapsed_minutes:.1f}"
         
         print(f"\nExam Time Remaining: {remaining_time}")
-        print(f"Elapsed: {elapsed_formatted} minutes out of {total_minutes} minutes")
+        if self.config.exam_time_minutes == -1:
+            print(f"Elapsed: {elapsed_formatted} minutes")
+        else:
+            total_minutes = self.config.exam_time_minutes
+            print(f"Elapsed: {elapsed_formatted} minutes out of {total_minutes} minutes")
         
         # Warning if less than 30 minutes left
-        remaining_minutes = self.session.get_remaining_time().total_seconds() / 60
-        if remaining_minutes <= 30:
-            print("⚠️  Less than 30 minutes remaining!")
+        if self.session.exam_end_time is not None:
+            remaining_minutes = self.session.get_remaining_time().total_seconds() / 60
+            if remaining_minutes <= 30:
+                print("⚠️  Less than 30 minutes remaining!")
         
         print()
     
@@ -827,7 +942,12 @@ Available commands:
                 print(f"Input:\n{task.visible_sample.input}")
                 print(f"Output:\n{task.visible_sample.output}")
             elif task.visible_sample.args is not None:
-                print(f"Arguments: {task.visible_sample.args}")
+                is_sudoku = self._is_sudoku_question(task)
+                if is_sudoku and task.visible_sample.args:
+                    print("Arguments:")
+                    self._print_sudoku_board(task.visible_sample.args[0])
+                else: 
+                    print(f"Arguments: {task.visible_sample.args}")
                 print(f"Expected Return: {task.visible_sample.ret}")
         
         # Create code file if it doesn't exist
@@ -839,6 +959,47 @@ Available commands:
             print(f"\nEdit your solution in '{qn}.py'.")
         
         print()
+    
+    def _is_sudoku_question(self, task) -> bool:
+        """Check if a task is about Sudoku based on its content."""
+        sudoku_keywords = ["sudoku", "9×9 matrix", "9x9 matrix"]
+        
+        title_lower = task.title.lower()
+        prompt_lower = task.prompt.lower()
+        
+        for keyword in sudoku_keywords:
+            if keyword in title_lower or keyword in prompt_lower:
+                return True
+        
+        # Additional check: if args looks like a 9x9 grid
+        if task.visible_sample and task.visible_sample.args:
+            args = task.visible_sample.args
+            if (len(args) == 1 and 
+                isinstance(args[0], list) and 
+                len(args[0]) == 9 and 
+                all(isinstance(row, list) and len(row) == 9 for row in args[0])):
+                return True
+        
+        return False
+    
+    def _print_sudoku_board(self, board: list[list[str]]) -> None:
+        """Print a Sudoku board in a nicely formatted way."""
+        print("┌───────┬───────┬───────┐")
+        for i in range(9):
+            if i % 3 == 0 and i != 0:
+                print("├───────┼───────┼───────┤")
+            
+            row_str = "│"
+            for j in range(9):
+                if j % 3 == 0 and j != 0:
+                    row_str += " │"
+                cell = board[i][j] if board[i][j] != "." else " "
+                row_str += f" {cell}"
+            
+            row_str += " │"
+            print(row_str)
+        
+        print("└───────┴───────┴───────┘")
     
     def _create_code_file(self, qn: str, task: Task):
         """Create a starter code file for a question with prompt and sample."""
@@ -932,6 +1093,12 @@ Available commands:
         
         # Run grader
         results = self.session.grader.grade_submission(task, str(code_file))
+
+        # Track failed attempts for hint system
+        if results['passed'] < results['total']:
+            if qn not in self.session.failed_attempts:
+                self.session.failed_attempts[qn] = 0
+            self.session.failed_attempts[qn] += 1
         
         # Check if debug mode is enabled via environment variable
         show_details = os.environ.get('EXAM_DEBUG', '').lower() in ['1', 'true', 'yes']
@@ -966,6 +1133,12 @@ Available commands:
         
         # Run grader
         results = self.session.grader.grade_submission(task, str(code_file))
+
+        # Track failed attempts for hint system
+        if results['passed'] < results['total']:
+            if qn not in self.session.failed_attempts:
+                self.session.failed_attempts[qn] = 0
+            self.session.failed_attempts[qn] += 1
         
         # Format and display results with details
         formatted_output = self.session.grader.format_test_results(results, show_details=True)
@@ -974,6 +1147,75 @@ Available commands:
         # Log debug test results
         self.session.log("DEBUG_TEST", f"Question: {qn}, Passed: {results['passed']}/{results['total']}")
         
+        print()
+    
+    def cmd_hint(self, qn: str):
+        """Display hints for a question based on progress."""
+        valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        if qn not in valid_questions:
+            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
+            return
+
+        task = self.session.assigned_tasks.get(qn)
+        if not task:
+            print(f"Error: {qn} is not assigned.")
+            return
+
+        if not task.hints:
+            print(f"\nNo hints available for {qn}.")
+            return
+
+        # Check if student has run tests for this question
+        code_file = Path(f"{qn}.py")
+        if not code_file.exists():
+            print(f"\nYou need to run tests for {qn} first to see your progress.")
+            print("Use 'test qN' or 'debug qN' to run tests and unlock hints based on your progress.")
+            return
+
+        # Run a quick test to get current pass rate
+        results = self.session.grader.grade_submission(task, str(code_file))
+        passed = results['passed']
+        total = results['total']
+        pass_rate = passed / total if total > 0 else 0
+
+        # Determine hints to show based on pass rate
+        if pass_rate == 0:
+            # No tests passed - require attempts
+            attempts = self.session.failed_attempts.get(qn, 0)
+            if attempts < 3:
+                print(f"\nHints for {qn} are not yet available.")
+                print(f"You haven't passed any tests yet. Make at least 3 test attempts first.")
+                print(f"Current attempts: {attempts}")
+                print("Keep trying and learning from the test results!")
+                return
+            max_hints = min(len(task.hints), 1)  # Show at least 1 hint after 3 attempts
+        else:
+            # Show hints proportional to pass rate
+            max_hints = max(1, int(len(task.hints) * pass_rate))
+
+        print(f"\nHints for {qn} ({task.id}): {task.title}")
+        print(f"Progress: {passed}/{total} tests passed")
+        print("=" * 50)
+
+        for i in range(max_hints):
+            print(f"{i+1}. {task.hints[i]}")
+
+        if max_hints < len(task.hints):
+            remaining = len(task.hints) - max_hints
+            if pass_rate == 0:
+                print(f"\n... {remaining} more hints available with continued testing")
+            else:
+                next_threshold = (max_hints + 1) / len(task.hints)
+                next_tests = int(next_threshold * total)
+                print(f"\n... {remaining} more hints available after passing {next_tests}/{total} tests")
+
+        print("=" * 50)
+        print("💡 Educational Note: Hints help guide your thinking, but solving independently")
+        print("   builds deeper understanding. Keep analyzing test failures!")
+
+        # Log hint usage
+        self.session.log("HINT_REQUEST", f"Question: {qn}, Progress: {passed}/{total}, Hints shown: {max_hints}")
+
         print()
     
     def cmd_submit(self, qn: str):
@@ -1023,12 +1265,15 @@ Available commands:
         print("This result has been saved. You can submit again to overwrite.")
         print("Please ensure your approach is described in 'algorithm.txt'.")
         
+        # Save timer state after submission
+        self.session.save_timer_state()
+
         # Log submission
         self.session.log(
             "SUBMISSION",
             f"Question: {qn}, Score: {results['score']:.2f}, Code SHA256: {code_sha256}"
         )
-        
+
         print()
     
     def cmd_status(self):
@@ -1052,12 +1297,19 @@ Available commands:
         print(f"\nTotal Score so far: {self.session.get_total_score():.2f} / {self.session.get_max_score():.2f}")
         print()
     
+    def cmd_exit(self):
+        """Exit the current exam session without finishing."""
+        print("\nExiting exam session. Your progress has been saved.")
+        print("You can resume later by running the exam again.")
+        self.session.log("SESSION_EXIT", "User exited session - progress saved")
+        self.session.is_finished = True
+
     def cmd_finish(self):
         """Finalize the exam and create submission package."""
         submitted_count = sum(1 for sub in self.session.submissions.values() if sub is not None)
-        
+
         print(f"\nYou have submissions for {submitted_count} out of {self.session.config.total_questions} questions.")
-        
+
         try:
             confirm = input("Are you sure you want to finish and lock your work? (y/n): ").strip().lower()
             if confirm != 'y':
@@ -1066,21 +1318,25 @@ Available commands:
         except (KeyboardInterrupt, EOFError):
             print("\nCancelled.")
             return
-        
+
         print("\nFinalizing...")
-        
+
         # Generate results file
         self.session.generate_results_file()
-        
+
         # Create submission ZIP
         zip_path = self.session.create_submission_zip()
-        
+
+        # Clean up timer state file since exam is finished
+        if self.session.timer_state_path.exists():
+            self.session.timer_state_path.unlink()
+
         # Log session finish
         self.session.log("SESSION_FINISH", f"Total Score: {self.session.get_total_score():.2f}")
-        
+
         print(f"Submission package '{zip_path.name}' created successfully.")
         print("Your work is now locked. Thank you.")
-        
+
         self.session.is_finished = True
 
 

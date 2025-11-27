@@ -1,0 +1,126 @@
+{
+  "group": "test",
+  "version": "2025.11.01-func",
+  "network_monitoring": {
+    "enabled": false,
+    "check_interval_seconds": 15
+  },
+  "ai_detection": {
+    "enabled": true,
+    "check_interval_seconds": 60
+  },
+  "difficulties": {
+    "easy": [
+      {
+        "id": "E01",
+        "title": "String Length",
+        "prompt": "Implement a function that returns the length of a string.\n\nFunction signature:\n  def string_length(s: str) -> int:",
+        "io": {
+          "mode": "function",
+          "entrypoint": "string_length"
+        },
+        "tests": [
+          {"args": ["hello"], "ret": 5},
+          {"args": ["world"], "ret": 5},
+          {"args": [""], "ret": 0},
+          {"args": ["a"], "ret": 1},
+          {"args": ["Python"], "ret": 6},
+          {"args": ["test string"], "ret": 11},
+          {"args": ["123"], "ret": 3},
+          {"args": ["x"], "ret": 1},
+          {"args": ["Test Line"], "ret": 9},
+          {"args": ["42"], "ret": 2},
+          {"args": ["end"], "ret": 3},
+          {"args": ["final"], "ret": 5},
+          {"args": ["last one"], "ret": 8},
+          {"args": ["done"], "ret": 4},
+          {"args": ["exit"], "ret": 4}
+        ],
+        "time_limit_ms": 1000,
+        "memory_limit_mb": 128,
+        "checker": "exact_match",
+        "hints": ["Use the built-in len() function"],
+        "tags": ["basics", "strings"],
+        "visible_sample": {
+          "args": ["sample"],
+          "ret": 6
+        }
+      }
+    ],
+    "medium": [
+      {
+        "id": "M01",
+        "title": "Count Vowels",
+        "prompt": "Implement a function that counts the number of vowels (a, e, i, o, u) in a string (case-insensitive).\n\nFunction signature:\n  def count_vowels(s: str) -> int:",
+        "io": {
+          "mode": "function",
+          "entrypoint": "count_vowels"
+        },
+        "tests": [
+          {"args": ["hello"], "ret": 2},
+          {"args": ["world"], "ret": 1},
+          {"args": ["AEIOU"], "ret": 5},
+          {"args": ["aeiou"], "ret": 5},
+          {"args": [""], "ret": 0},
+          {"args": ["bcdfg"], "ret": 0},
+          {"args": ["Python"], "ret": 1},
+          {"args": ["Programming"], "ret": 3},
+          {"args": ["Education"], "ret": 5},
+          {"args": ["rhythm"], "ret": 0},
+          {"args": ["AEIOUaeiou"], "ret": 10},
+          {"args": ["test"], "ret": 1},
+          {"args": ["beautiful"], "ret": 5},
+          {"args": ["xyz"], "ret": 0},
+          {"args": ["Queue"], "ret": 4}
+        ],
+        "time_limit_ms": 1000,
+        "memory_limit_mb": 128,
+        "checker": "exact_match",
+        "hints": ["Iterate through the string and check if each character is a vowel", "Remember to handle both uppercase and lowercase"],
+        "tags": ["strings", "counting"],
+        "visible_sample": {
+          "args": ["example"],
+          "ret": 3
+        }
+      }
+    ],
+    "hard": [
+      {
+        "id": "H01",
+        "title": "Fibonacci",
+        "prompt": "Implement a function that returns the nth Fibonacci number (0-indexed).\nF(0) = 0, F(1) = 1, F(n) = F(n-1) + F(n-2)\n\nFunction signature:\n  def fibonacci(n: int) -> int:",
+        "io": {
+          "mode": "function",
+          "entrypoint": "fibonacci"
+        },
+        "tests": [
+          {"args": [0], "ret": 0},
+          {"args": [1], "ret": 1},
+          {"args": [2], "ret": 1},
+          {"args": [3], "ret": 2},
+          {"args": [4], "ret": 3},
+          {"args": [5], "ret": 5},
+          {"args": [6], "ret": 8},
+          {"args": [7], "ret": 13},
+          {"args": [8], "ret": 21},
+          {"args": [9], "ret": 34},
+          {"args": [10], "ret": 55},
+          {"args": [15], "ret": 610},
+          {"args": [20], "ret": 6765},
+          {"args": [12], "ret": 144},
+          {"args": [11], "ret": 89}
+        ],
+        "time_limit_ms": 2000,
+        "memory_limit_mb": 256,
+        "checker": "exact_match",
+        "hints": ["Use iteration or memoization for efficiency", "Avoid naive recursion for large n"],
+        "tags": ["recursion", "dynamic-programming"],
+        "visible_sample": {
+          "args": [6],
+          "ret": 8
+        }
+      }
+    ]
+  }
+}
+

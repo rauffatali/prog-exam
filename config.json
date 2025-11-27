@@ -1,13 +1,14 @@
 {
-  "total_questions": 3,
-  "easy_count": 1,
-  "medium_count": 1,
-  "hard_count": 1,
-  "easy_weight": 5.0,
-  "medium_weight": 5.0,
+  "total_questions": 5,
+  "easy_count": 0,
+  "medium_count": 0,
+  "hard_count": 5,
+  "easy_weight": 0.0,
+  "medium_weight": 0.0,
   "hard_weight": 5.0,
-  "max_points": 15.0,
+  "max_points": 25.0,
   "exam_time_minutes": 180,
+  "work_dir_postfix": "TP_EVAL",
 
   "_comment": "This is the default exam configuration. Adjust values as needed.",
   
@@ -21,7 +22,7 @@
     "hard_weight": "Points awarded for each hard question",
     "max_points": "Maximum total points (should equal sum of all weights)",
     "note": "The counts must sum to total_questions, and the weights must sum to max_points",
-    "exam_time_minutes": "Total time allowed for the exam in minutes"
+    "exam_time_minutes": "Total time allowed for the exam in minutes. Use -1 for unlimited time."
   },
 
   "_examples": [
@@ -72,6 +73,18 @@
       "hard_weight": 4.0,
       "max_points": 16.0, 
       "exam_time_minutes": 180
+    },
+    {
+      "description": "Exam with unlimited time",
+      "total_questions": 4,
+      "easy_count": 2,
+      "medium_count": 1,
+      "hard_count": 1,
+      "easy_weight": 4.0,
+      "medium_weight": 4.0,
+      "hard_weight": 4.0,
+      "max_points": 16.0, 
+      "exam_time_minutes": -1
     }
   ]
 }
