@@ -854,7 +854,7 @@ python main.py --bank bank_group1.enc
 ```
 
 ### Restart After Crash
-**Executable:** `.\exam.exe --group 1`  
+**Executable:** `.\exam.exe --bank bank_group1.enc`  
 **Virtual Env:** `.\.venv\Scripts\Activate.ps1` then `python main.py --bank bank_group1.enc`  
 Then: Enter key → Student enters same name → resumes
 

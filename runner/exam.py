@@ -14,6 +14,7 @@ import json
 import hashlib
 import base64
 import time
+import random
 import threading
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -485,24 +486,28 @@ class ExamRunner:
         seed_string = f"{self.session.name.lower()}{self.session.surname.lower()}{self.group}{exam_date}"
         seed_hash = hashlib.sha256(seed_string.encode()).hexdigest()
         seed = int(seed_hash, 16)
+        random.seed(seed)
         
         # Build list of tasks to assign based on config
         tasks_to_assign = []
         
         # Add easy tasks
+        shuffled_easy = self.bank.easy.copy()
+        random.shuffle(shuffled_easy)
         for i in range(self.config.easy_count):
-            easy_idx = (seed + i) % len(self.bank.easy)
-            tasks_to_assign.append(("easy", self.bank.easy[easy_idx]))
+            tasks_to_assign.append(("easy", shuffled_easy[i]))
         
         # Add medium tasks
+        shuffled_medium = self.bank.medium.copy()
+        random.shuffle(shuffled_medium)
         for i in range(self.config.medium_count):
-            medium_idx = (seed // 1000 + i) % len(self.bank.medium)
-            tasks_to_assign.append(("medium", self.bank.medium[medium_idx]))
+            tasks_to_assign.append(("medium", shuffled_medium[i]))
         
         # Add hard tasks
+        shuffled_hard = self.bank.hard.copy()
+        random.shuffle(shuffled_hard)
         for i in range(self.config.hard_count):
-            hard_idx = (seed // 1000000 + i) % len(self.bank.hard)
-            tasks_to_assign.append(("hard", self.bank.hard[hard_idx]))
+            tasks_to_assign.append(("hard", shuffled_hard[i]))
         
         # Assign to question numbers
         self.session.assigned_tasks = {}

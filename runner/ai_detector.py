@@ -492,26 +492,36 @@ class AIDetector:
         
         # Load user settings
         settings = self._load_vscode_settings(system)
-        
+
         # Check specific settings
         if meta['settings_keys']:
+            disabled_reasons = []
+            enabled_details = []
             for key, disable_val in zip(meta['settings_keys'], meta['disable_values']):
-                setting_val = self._get_nested_setting(settings, key)
-                if setting_val is not None:
-                    if isinstance(setting_val, dict):
-                        # Language-specific: enabled if any is True
-                        if any(setting_val.values()):
-                            enabled_langs = [k for k, v in setting_val.items() if v]
-                            return True, f"Enabled for: {', '.join(enabled_langs)}"
-                        else:
-                            return False, "Disabled for all languages"
-                    elif setting_val != disable_val:
-                        return True, f"Enabled via {key}"
+                setting_val = settings.get(key)
+                if setting_val is None:
+                    enabled_details.append(f"{key}: default enabled")
+                    continue
+                if isinstance(setting_val, dict):
+                    # Language-specific: enabled if any is True
+                    if any(setting_val.values()):
+                        enabled_langs = [k for k, v in setting_val.items() if v]
+                        enabled_details.append(f"{key}: enabled for {', '.join(enabled_langs)}")
                     else:
-                        return False, f"Disabled via {key}"
-        
+                        disabled_reasons.append(f"{key}: disabled for all languages")
+                elif setting_val == disable_val:
+                    disabled_reasons.append(f"{key}: explicitly disabled")
+                else:
+                    enabled_details.append(f"{key}: explicitly enabled")
+
+            if enabled_details:
+                return True, f"{'; '.join(enabled_details)}"
+            
+            details = "; ".join(disabled_reasons) if disabled_reasons else "All settings disabled"
+            return False, details
+
         # No explicit settings: use default
-        return meta['default_enabled'], "Default state (no override)"
+        return meta['default_enabled'], "Default state"
 
     def _load_vscode_settings(self, system: str) -> dict:
         """Load VS Code user settings.json."""
@@ -530,17 +540,6 @@ class AIDetector:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
             return {}
-
-    def _get_nested_setting(self, settings: dict, key: str):
-        """Get nested setting value (e.g., 'github.copilot.enable')."""
-        keys = key.split('.')
-        current = settings
-        for k in keys:
-            if isinstance(current, dict) and k in current:
-                current = current[k]
-            else:
-                return None
-        return current
 
     def check_ide_ai_tools(self) -> Tuple[bool, List[str]]:
         """
