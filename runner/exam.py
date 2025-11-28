@@ -14,6 +14,7 @@ import json
 import hashlib
 import base64
 import time
+import math
 import random
 import threading
 from pathlib import Path
@@ -1184,8 +1185,17 @@ Available commands:
         pass_rate = passed / total if total > 0 else 0
 
         # Determine hints to show based on pass rate
-        if pass_rate == 0:
-            # No tests passed - require attempts
+        if pass_rate >= 1.0:
+            print(f"\n🎉 Congratulations! You've passed all tests for {qn}.")
+            print("Since you've solved the problem completely, hints are not available.")
+            print("Great job demonstrating your understanding!")
+            return
+        elif pass_rate >= 2/3:
+            max_hints = len(task.hints)
+        elif pass_rate >= 1/3:
+            max_hints = math.ceil(len(task.hints) / 2)
+        else:
+            # No tests passed - require attempts for gradual hints
             attempts = self.session.failed_attempts.get(qn, 0)
             if attempts < 3:
                 print(f"\nHints for {qn} are not yet available.")
@@ -1193,10 +1203,7 @@ Available commands:
                 print(f"Current attempts: {attempts}")
                 print("Keep trying and learning from the test results!")
                 return
-            max_hints = min(len(task.hints), 1)  # Show at least 1 hint after 3 attempts
-        else:
-            # Show hints proportional to pass rate
-            max_hints = max(1, int(len(task.hints) * pass_rate))
+            max_hints = min(len(task.hints), attempts - 2)
 
         print(f"\nHints for {qn} ({task.id}): {task.title}")
         print(f"Progress: {passed}/{total} tests passed")
@@ -1208,10 +1215,13 @@ Available commands:
         if max_hints < len(task.hints):
             remaining = len(task.hints) - max_hints
             if pass_rate == 0:
-                print(f"\n... {remaining} more hints available with continued testing")
-            else:
-                next_threshold = (max_hints + 1) / len(task.hints)
-                next_tests = int(next_threshold * total)
+                # Attempt-based system
+                if max_hints < len(task.hints):
+                    next_attempts = max_hints + 2  # Need 2 more attempts for next hint
+                    print(f"\n... {remaining} more hints available after {next_attempts} total attempts")
+            elif max_hints == math.ceil(len(task.hints) / 2):
+                # Has first half, needs 2/3 for all hints
+                next_tests = math.ceil(2/3 * total)
                 print(f"\n... {remaining} more hints available after passing {next_tests}/{total} tests")
 
         print("=" * 50)

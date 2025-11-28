@@ -155,8 +155,8 @@ LLM_PROCESSES = {
 AI_EXTENSION_META = {
     'github.copilot': {
         'default_enabled': True,  # On by default
-        'settings_keys': ['github.copilot.enable', 'github.copilot.editor.enableAutoCompletions'],
-        'disable_values': [False, False]
+        'settings_keys': ['github.copilot.enable'],
+        'disable_values': [False]
     },
     'codeium.codeium': {
         'default_enabled': True,
