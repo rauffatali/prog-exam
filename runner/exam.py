@@ -336,6 +336,7 @@ class ExamRunner:
         self.bank: Optional[Bank] = None
         self.session: Optional[ExamSession] = None
         self.config: Optional[ExamConfig] = None
+        self.time_expired_warning_shown = False
     
     def derive_key_from_password(self, password: str, salt: bytes) -> bytes:
         """Derive a Fernet key from a password using PBKDF2."""
@@ -392,7 +393,15 @@ class ExamRunner:
             decrypted_data = fernet.decrypt(encrypted_data)
             bank_dict = json.loads(decrypted_data)
             
-            self.bank = Bank.from_dict(bank_dict)
+            if "config" in bank_dict and "bank" in bank_dict:
+                bundle = bank_dict
+                self.bank = Bank.from_dict(bundle["bank"])
+                self.config = ExamConfig.from_dict(bundle["config"])
+                is_valid, err = self.config.validate()
+                if not is_valid:
+                    raise ValueError(f"Invalid bundled config: {err}")
+            else:
+                self.bank = Bank.from_dict(bank_dict)
             return True
         
         except Exception as e:
@@ -525,7 +534,11 @@ class ExamRunner:
         parser.add_argument(
             "--bank",
             required=True,
-            help="Encrypted bank filename (e.g., bank_group1.enc)"
+            help="Encrypted bank filename or bundle filename (e.g., bank_group1.enc or bundle.enc)"
+        )
+        parser.add_argument(
+            "--config",
+            help="Path to exam configuration file (default: config.json in executable directory)"
         )
         
         args = parser.parse_args()
@@ -622,13 +635,19 @@ class ExamRunner:
             print("✓ AI detection: disabled")
         
         # Load exam configuration
+        config_loaded_from_bundle = self.config is not None
         try:
-            self.config = load_config()
-            print(f"✓ Config loaded: {self.config.total_questions} questions ({self.config.easy_count}E, {self.config.medium_count}M, {self.config.hard_count}H) = {self.config.max_points} pts")
+            if config_loaded_from_bundle:
+                print("✓ Config loaded from encrypted bundle.")
+            else:
+                config_path = Path(args.config) if args.config else None
+                self.config = load_config(config_path)
+                src = args.config if args.config else "config.json (default)"
+                print(f"✓ Config loaded: {src} questions (...same print...)")
         except ValueError as e:
             print(f"Error loading configuration: {e}")
             return 1
-        
+
         # Authenticate student
         if not self.authenticate_student():
             return 1
@@ -698,15 +717,9 @@ class ExamRunner:
         """Background thread to monitor exam time and auto-finish when expired."""
         while self.exam_timer_active and not self.session.is_finished:
             if self.session.is_time_expired():
-                print("\n" + "!"*60)
-                print("⚠️  EXAM TIME FINISHED! ⚠️")
-                print("Your exam has automatically stopped.")
-                print("!"*60)
                 
+                self.time_expired_warning_shown = True
                 self.session.log("EXAM_TIMEOUT", "Exam time finished - auto-stopping")
-                
-                # Auto-stop the exam
-                self._auto_finish_exam()
                 break
             
             time.sleep(1)  # Check every second
@@ -714,6 +727,9 @@ class ExamRunner:
     def _auto_finish_exam(self):
         """Automatically finish the exam when time expires."""
         try:
+            # Auto-submit all unsubmitted questions first
+            self._auto_submit_all_questions()
+
             # Generate results file
             self.session.generate_results_file()
             
@@ -730,6 +746,62 @@ class ExamRunner:
         except Exception as e:
             print(f"Error during auto-finish: {e}")
             self.session.log("ERROR", f"Auto-finish error: {e}")
+    
+    def _auto_submit_all_questions(self):
+        """Auto-submit all questions that haven't been submitted yet."""
+        submitted_count = 0
+        
+        for i in range(self.session.config.total_questions):
+            qn = f"q{i+1}"
+            task = self.session.assigned_tasks.get(qn)
+            
+            # Skip if already submitted or no task assigned
+            if not task or self.session.submissions.get(qn) is not None:
+                continue
+            
+            code_file = Path(f"{qn}.py")
+            if not code_file.exists():
+                print(f"Warning: {qn}.py not found, skipping submission")
+                continue
+            
+            print(f"Auto-submitting {qn}...")
+            
+            # Run final test
+            results = self.session.grader.grade_submission(task, str(code_file))
+            
+            # Read code for SHA256
+            with open(code_file, 'rb') as f:
+                code_bytes = f.read()
+            code_sha256 = hashlib.sha256(code_bytes).hexdigest()
+            
+            # Get max score for this task
+            max_score = results.get("max_score", 0.0)
+            
+            # Store submission
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            self.session.submissions[qn] = {
+                "task_id": task.id,
+                "score": results["score"],
+                "passed": results["passed"],
+                "total": results["total"],
+                "max_score": max_score,
+                "results": results["results"],
+                "code_sha256": code_sha256,
+                "timestamp": timestamp
+            }
+            
+            # Log auto-submission
+            self.session.log(
+                "AUTO_SUBMISSION",
+                f"Question: {qn}, Score: {results['score']:.2f}, Code SHA256: {code_sha256}"
+            )
+            
+            submitted_count += 1
+        
+        if submitted_count > 0:
+            print(f"Auto-submitted {submitted_count} question(s).")
+        else:
+            print("All questions were already submitted.")
     
     def _monitor_network_background(self):
         """Background network monitoring thread."""
@@ -798,6 +870,28 @@ class ExamRunner:
             try:
                 # Save timer state periodically
                 self.session.save_timer_state()
+
+                # Check if time has expired and show warning
+                if self.time_expired_warning_shown and not self.session.is_finished:
+                    print("\n" + "!"*60)
+                    print("⚠️  EXAM TIME HAS EXPIRED! ⚠️")
+                    print("This is your LAST WARNING to save all changes!")
+                    print("!"*60)
+                    
+                    try:
+                        response = input("\nHave you saved all your changes? Type 'yes' to continue: ").strip().lower()
+                        if response == 'yes':
+                            print("\nAuto-submitting all unsubmitted questions...")
+                            self._auto_finish_exam()
+                        else:
+                            print("\nPlease save your changes first, then type 'yes'.")
+                            self.time_expired_warning_shown = False
+                            continue
+                    except (KeyboardInterrupt, EOFError):
+                        print("\n\nAuto-submitting all questions and finishing exam...")
+                        self._auto_finish_exam()
+                    
+                    break
 
                 # Check if time has expired before each command
                 if self.session.is_time_expired():

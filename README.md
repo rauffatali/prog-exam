@@ -75,10 +75,10 @@
    ```powershell
    cd prog-exam
    # Option A: Using key file
-   python tools\verify_bank.py --bank banks\bank_group1.enc --key-file GROUP1.key
+python tools\verify.py --bank banks\bank_group1.enc --key-file GROUP1.key
 
    # Option B: Using password directly
-   python tools\verify_bank.py --bank banks\bank_group1.enc --password
+python tools\verify.py --bank banks\bank_group1.enc --password
    ```
    Expected: `[OK] Bank validation PASSED`
 
@@ -117,7 +117,7 @@ Teachers can customize exam parameters using a configuration file.
 
 ```powershell
 cd prog-exam
-python tools\config_helper.py
+python tools\build_config.py
 ```
 
 Select option 1 (Create new configuration) and follow the prompts:
@@ -166,7 +166,7 @@ Edit `config.json`:
 
 Before deploying, validate your configuration:
 ```powershell
-python tools\config_helper.py
+python tools\build_config.py
 # Choose option 2 (Validate existing configuration)
 ```
 
@@ -797,14 +797,14 @@ IMPORTANT:
 ### Create Exam Configuration (Optional)
 ```powershell
 cd prog-exam
-python tools\config_helper.py
+python tools\build_config.py
 # Choose option 1, follow prompts
 ```
 Output: `config.json` (place next to executable)
 
 **Or validate existing config:**
 ```powershell
-python tools\config_helper.py
+python tools\build_config.py
 # Choose option 2
 ```
 

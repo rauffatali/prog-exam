@@ -10,9 +10,9 @@
 |------|---------|---------------|
 | `keygen.py` | Generate encryption keys | Once per exam group (optional - can use passwords) |
 | `build_bank.py` | Encrypt plaintext banks | After authoring tasks (key file OR password) |
-| `verify_bank.py` | Validate and test decrypt | During authoring + pre-deployment |
+| `verify.py` | Validate and test decrypt | During authoring + pre-deployment |
 | `rotate_key.py` | Re-encrypt with new key/password | Post-exam (before reuse) |
-| `config_helper.py` | Create/validate exam config | Before exam deployment (set parameters) |
+| `build_config.py` | Create/validate exam config | Before exam deployment (set parameters) |
 
 
 ---
@@ -106,27 +106,27 @@ You'll be prompted to enter and confirm your password.
 
 ---
 
-### 3. verify_bank.py
+### 3. verify.py
 
-**Purpose:** Validate bank schema and test decryption.
+**Purpose:** Validate banks, configs, and bundles; test decryption.
 
 **Usage:**
 
 **Plaintext bank:**
 ```bash
-python tools/verify_bank.py --bank bank_group1.json
+python tools/verify.py --bank bank_group1.json
 ```
 
 **Encrypted bank (key file):**
 ```bash
-python tools/verify_bank.py \
+python tools/verify.py \
   --bank banks/bank_group1.enc \
   --key-file GROUP1.key
 ```
 
 **Encrypted bank (password):**
 ```bash
-python tools/verify_bank.py \
+python tools/verify.py \
   --bank banks/bank_group1.enc \
   --password
 ```
@@ -134,19 +134,30 @@ You'll be prompted to enter the password.
 
 **Verbose mode:**
 ```bash
-python tools/verify_bank.py --bank bank_group1.json --verbose
+python tools/verify.py --bank bank_group1.json --verbose
 ```
 
-**Auto-detection:** The tool automatically detects whether a bank was encrypted with a key file or password.
+**Config file:**
+```bash
+python tools/verify.py --config config.json
+```
+
+**Bundle (config + bank):**
+```bash
+# password-encrypted bundle
+python tools/verify.py --bundle banks/group1_bundle.enc --password
+# key-file-encrypted bundle
+python tools/verify.py --bundle banks/group1_bundle.enc --key-file GROUP1.key
+# plaintext bundle for dev
+python tools/verify.py --bundle group1_bundle.json
+```
+
+**Auto-detection:** Detects key-file vs password encryption for `.enc` files. Bundles are recognized when containing both `config` and `bank` keys.
 
 **Validations Performed:**
-- Top-level structure (group, version, difficulties)
-- 60 tasks (20 per difficulty)
-- 15 test cases per task
-- Required fields for each task
-- I/O mode consistency
-- Time/memory limits
-- Checker function names
+- For configs: schema load + `ExamConfig.validate()`
+- For banks: top-level structure (group, version, difficulties), 60 tasks (20 per difficulty), 15 test cases per task, required fields, I/O mode consistency, time/memory limits, checker names
+- For bundles: validates both embedded config and bank
 
 **Output:**
 - List of errors (blocking)
@@ -218,13 +229,13 @@ python tools/rotate_key.py \
 
 ---
 
-### 5. config_helper.py
+### 5. build_config.py
 
 **Purpose:** Interactive tool to help teachers create and validate exam configuration files.
 
 **Usage:**
 ```bash
-python tools/config_helper.py
+python tools/build_config.py
 ```
 
 **Features:**
@@ -235,7 +246,7 @@ python tools/config_helper.py
 
 **Interactive Example:**
 ```bash
-python tools/config_helper.py
+python tools/build_config.py
 
 EXAM CONFIGURATION HELPER TOOL
 Options:
@@ -287,7 +298,7 @@ Save to config.json? (y/n): y
 
 **Validate Example:**
 ```bash
-python tools/config_helper.py
+python tools/build_config.py
 
 Enter your choice (1-4): 2
 
@@ -335,7 +346,7 @@ For detailed information about exam configuration, see: `../documentations/TEACH
 #    → Create bank_group1.json following schema
 
 # 2. Validate schema
-python tools/verify_bank.py --bank bank_group1.json --verbose
+python tools/verify.py --bank bank_group1.json --verbose
 
 # 3. Generate key
 python tools/keygen.py --out GROUP1.key
@@ -347,7 +358,7 @@ python tools/build_bank.py \
   --key-file GROUP1.key
 
 # 5. Verify encrypted bank
-python tools/verify_bank.py \
+python tools/verify.py \
   --bank banks/bank_group1.enc \
   --key-file GROUP1.key
 ```
@@ -359,7 +370,7 @@ python tools/verify_bank.py \
 #    → Create bank_group1.json following schema
 
 # 2. Validate schema
-python tools/verify_bank.py --bank bank_group1.json --verbose
+python tools/verify.py --bank bank_group1.json --verbose
 
 # 3. Encrypt bank with password
 python tools/build_bank.py \
@@ -369,7 +380,7 @@ python tools/build_bank.py \
 # Enter password when prompted
 
 # 4. Verify encrypted bank
-python tools/verify_bank.py \
+python tools/verify.py \
   --bank banks/bank_group1.enc \
   --password
 # Enter password when prompted
@@ -379,7 +390,7 @@ python tools/verify_bank.py \
 
 ```bash
 # Test decryption on clean machine
-python tools/verify_bank.py \
+python tools/verify.py \
   --bank banks/bank_group1.enc \
   --key-file GROUP1.key
 
@@ -400,7 +411,7 @@ python tools/rotate_key.py \
   --new-key-file GROUP1_2026.key
 
 # 3. Verify with new key
-python tools/verify_bank.py \
+python tools/verify.py \
   --bank banks/bank_group1.enc \
   --key-file GROUP1_2026.key
 
@@ -419,7 +430,7 @@ python tools/rotate_key.py \
 # Enter old and new passwords when prompted
 
 # 2. Verify with new password
-python tools/verify_bank.py \
+python tools/verify.py \
   --bank banks/bank_group1.enc \
   --password
 # Enter new password when prompted
@@ -456,7 +467,7 @@ pip install cryptography
 
 **Solution:** Use --password flag instead:
 ```bash
-python tools/verify_bank.py --bank banks/bank_group1.enc --password
+python tools/verify.py --bank banks/bank_group1.enc --password
 ```
 
 ### "[ERROR] This bank was encrypted with a key file. Use --key-file."
@@ -465,7 +476,7 @@ python tools/verify_bank.py --bank banks/bank_group1.enc --password
 
 **Solution:** Use --key-file flag instead:
 ```bash
-python tools/verify_bank.py --bank banks/bank_group1.enc --key-file GROUP1.key
+python tools/verify.py --bank banks/bank_group1.enc --key-file GROUP1.key
 ```
 
 ### "[ERROR] Invalid JSON: ..."
@@ -521,7 +532,7 @@ python tools/verify_bank.py --bank banks/bank_group1.enc --key-file GROUP1.key
    - Store in password manager
 
 5. **Verify before deploying**
-   - Always run `verify_bank.py` on encrypted banks
+   - Always run `verify.py` on encrypted banks/bundles
    - Test decryption on clean machine
 
 6. **Document encryption method**
@@ -572,7 +583,7 @@ python tools/keygen.py --out TEST.key
 python tools/build_bank.py --in test.json --out test.enc --key-file TEST.key
 
 # Verify
-python tools/verify_bank.py --bank test.enc --key-file TEST.key
+python tools/verify.py --bank test.enc --key-file TEST.key
 
 # Expected: [OK] Bank validation PASSED
 ```
@@ -585,7 +596,7 @@ python tools/verify_bank.py --bank test.enc --key-file TEST.key
 ```bash
 python tools/keygen.py --help
 python tools/build_bank.py --help
-python tools/verify_bank.py --help
+python tools/verify.py --help
 python tools/rotate_key.py --help
 ```
 

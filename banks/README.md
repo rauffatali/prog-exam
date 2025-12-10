@@ -351,7 +351,7 @@ Set the `checker` field to:
 
 ## 8. Validation Rules
 
-Use `tools/verify_bank.py` to enforce these rules:
+Use `tools/verify.py` to enforce these rules:
 
 ### 8.1 Structural Requirements
 - ✓ Exactly 20 tasks per difficulty level (60 total)
@@ -435,10 +435,10 @@ Use `tools/verify_bank.py` to enforce these rules:
 ## 10. Authoring Workflow
 
 1. **Create plaintext JSON** following this schema
-2. **Validate** using `tools/verify_bank.py --bank bank_group1.json`
+2. **Validate** using `tools/verify.py --bank bank_group1.json`
 3. **Generate key** using `tools/keygen.py --out GROUP1.key`
 4. **Encrypt** using `tools/build_bank.py --in bank_group1.json --out banks/bank_group1.enc --key-file GROUP1.key`
-5. **Verify encrypted** using `tools/verify_bank.py --bank banks/bank_group1.enc --key-file GROUP1.key`
+5. **Verify encrypted** using `tools/verify.py --bank banks/bank_group1.enc --key-file GROUP1.key`
 6. **Store key securely** (password manager, not in version control)
 7. **Distribute only** the `.enc` file to exam machines
 
