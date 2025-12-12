@@ -289,11 +289,14 @@ class Grader:
                 "error": error_msg if status != "success" else None
             }
             
+            # Always keep function args for debugging so they show up for runtime errors too
+            if test_case.args is not None:
+                result_dict["function_args"] = test_case.args
+            
             # Add student output and expected for failed tests (for debugging)
             if result_status == "failed":
                 result_dict["student_output"] = return_value
                 result_dict["expected_output"] = test_case.ret
-                result_dict["function_args"] = test_case.args
             
             results.append(result_dict)
         
@@ -345,14 +348,15 @@ class Grader:
                 if error and error.strip():
                     lines.append(f"         Details: {error.strip()[:200]}")
                 
-                # Show output comparison for failed tests
+                # Show test input and output comparison for failed tests
+                func_args = result.get('function_args')
+                if func_args is not None:
+                    lines.append(f"         Args: {func_args}")
+
                 if status == "failed":
                     student_out = result.get('student_output')
                     expected_out = result.get('expected_output')
-                    func_args = result.get('function_args')
                     
-                    if func_args is not None:
-                        lines.append(f"         Args: {func_args}")
                     if student_out is not None:
                         lines.append(f"         Your output: {repr(student_out)[:100]}")
                     if expected_out is not None:
@@ -362,4 +366,3 @@ class Grader:
         lines.append("This is not your final score. Use 'submit qN' to record your result.")
         
         return "\n".join(lines)
-

@@ -643,7 +643,7 @@ class ExamRunner:
                 config_path = Path(args.config) if args.config else None
                 self.config = load_config(config_path)
                 src = args.config if args.config else "config.json (default)"
-                print(f"✓ Config loaded: {src} questions (...same print...)")
+                print(f"✓ Config loaded: {src}")
         except ValueError as e:
             print(f"Error loading configuration: {e}")
             return 1
