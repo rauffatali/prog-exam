@@ -12,6 +12,7 @@ from typing import Dict, List, Tuple, Callable, Any
 
 from .models import Task, ExamConfig
 from .sandbox import run_code_stdin_stdout, run_code_function
+from .translations import TRANSLATIONS
 
 
 class Grader:
@@ -25,6 +26,18 @@ class Grader:
             "float_isclose": self._float_isclose,
             "unordered_list_equal": self._unordered_list_equal,
         }
+        self._message_fn = None
+    
+    # ===== HELPER FUNCTIONS =====
+
+    def set_message_fn(self, message_fn):
+        self._message_fn = message_fn
+
+    def _msg(self, key: str, **kwargs) -> str:
+        if self._message_fn:
+            return self._message_fn(key, **kwargs)
+        template = TRANSLATIONS["en"].get(key, key)
+        return template.format(**kwargs)
     
     # ===== CHECKER FUNCTIONS =====
     
@@ -316,53 +329,49 @@ class Grader:
             Formatted string for terminal display
         """
         lines = []
-        lines.append(f"Running {results['total']} hidden tests...\n")
-        
+        lines.append(self._msg("grader_running_tests", total=results['total']))
+    
         for result in results['results']:
             test_num = result['test_num']
             status = result['status']
             elapsed_ms = result.get('elapsed_ms', 0)
-            
+    
             if status == "passed":
-                lines.append(f"Test #{test_num:2d}:  PASSED ({elapsed_ms} ms)")
+                lines.append(self._msg("grader_test_passed", num=test_num, ms=elapsed_ms))
             elif status == "failed":
-                lines.append(f"Test #{test_num:2d}:  FAILED (Wrong Answer)")
+                lines.append(self._msg("grader_test_failed_wrong", num=test_num))
             elif status == "timeout":
-                lines.append(f"Test #{test_num:2d}:  FAILED (Timeout)")
+                lines.append(self._msg("grader_test_failed_timeout", num=test_num))
             elif status == "runtime_error":
-                lines.append(f"Test #{test_num:2d}:  FAILED (Runtime Error)")
+                lines.append(self._msg("grader_test_failed_runtime", num=test_num))
             elif status == "memory_error":
-                lines.append(f"Test #{test_num:2d}:  FAILED (Memory Limit Exceeded)")
+                lines.append(self._msg("grader_test_failed_memory", num=test_num))
             elif status == "import_error":
-                lines.append(f"Test #{test_num:2d}:  FAILED (Import Error)")
+                lines.append(self._msg("grader_test_failed_import", num=test_num))
             else:
-                lines.append(f"Test #{test_num:2d}:  FAILED ({status})")
-            
-            # Show error details for debugging (always show for runtime errors)
+                lines.append(self._msg("grader_test_failed_generic", num=test_num, status=status))
+    
             if status != "passed" and show_details:
                 stderr = result.get('stderr')
                 error = result.get('error')
-                
                 if stderr and stderr.strip():
-                    lines.append(f"         Error: {stderr.strip()[:200]}")
+                    lines.append(self._msg("grader_error_label", text=stderr.strip()[:200]))
                 if error and error.strip():
-                    lines.append(f"         Details: {error.strip()[:200]}")
-                
-                # Show test input and output comparison for failed tests
+                    lines.append(self._msg("grader_details_label", text=error.strip()[:200]))
+    
                 func_args = result.get('function_args')
                 if func_args is not None:
-                    lines.append(f"         Args: {func_args}")
-
+                    lines.append(self._msg("grader_args_label", args=func_args))
+    
                 if status == "failed":
                     student_out = result.get('student_output')
                     expected_out = result.get('expected_output')
-                    
                     if student_out is not None:
-                        lines.append(f"         Your output: {repr(student_out)[:100]}")
+                        lines.append(self._msg("grader_student_output", output=repr(student_out)[:100]))
                     if expected_out is not None:
-                        lines.append(f"         Expected: {repr(expected_out)[:100]}")
-        
-        lines.append(f"\nResult: {results['passed']} / {results['total']} tests passed.")
-        lines.append("This is not your final score. Use 'submit qN' to record your result.")
-        
+                        lines.append(self._msg("grader_expected_output", output=repr(expected_out)[:100]))
+    
+        lines.append("")
+        lines.append(self._msg("grader_result_summary", passed=results['passed'], total=results['total']))
+        lines.append(self._msg("grader_submit_hint"))
         return "\n".join(lines)

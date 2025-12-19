@@ -30,6 +30,7 @@ from .grader import Grader
 from .config_loader import load_config
 from .connectivity import check_internet_connectivity
 from .ai_detector import AIDetector, check_ai_tools_at_startup
+from .translations import TRANSLATIONS
 
 
 class ExamSession:
@@ -80,6 +81,9 @@ class ExamSession:
         self.exam_start_time: Optional[datetime] = None
         self.exam_end_time: Optional[datetime] = None
         self.timer_state_path = work_dir / "timer_state.json"
+
+        self.language: str = "en"
+        self.messages = TRANSLATIONS["en"]
     
     def log(self, event: str, details: str = ""):
         """Append an entry to the session log."""
@@ -337,6 +341,10 @@ class ExamRunner:
         self.session: Optional[ExamSession] = None
         self.config: Optional[ExamConfig] = None
         self.time_expired_warning_shown = False
+
+    def _msg(self, key: str, **kwargs) -> str:
+        template = self.messages.get(key, key)
+        return template.format(**kwargs)
     
     def derive_key_from_password(self, password: str, salt: bytes) -> bytes:
         """Derive a Fernet key from a password using PBKDF2."""
@@ -348,7 +356,17 @@ class ExamRunner:
         )
         key_material = kdf.derive(password.encode('utf-8'))
         return base64.urlsafe_b64encode(key_material)
-    
+
+    def _prompt_language(self) -> str:
+        prompt = TRANSLATIONS["en"]["prompt_language"]
+        while True:
+            choice = input(prompt).strip().lower()
+            if choice in ("en", "english", "e", "a", "anglais"):
+                return "en"
+            if choice in ("fr", "french", "f", "français"):
+                return "fr"
+            print(TRANSLATIONS["en"]["invalid_language"])
+        
     def load_bank(self, key_input: Optional[str]) -> bool:
         """
         Load and decrypt the question bank.
@@ -366,6 +384,7 @@ class ExamRunner:
             if self.bank_path.suffix.lower() == '.json':
                 with open(self.bank_path, 'r', encoding='utf-8') as f:
                     bank_dict = json.load(f)
+                bank_dict = self._select_language_payload(bank_dict)
                 self.bank = Bank.from_dict(bank_dict)
                 return True
 
@@ -395,19 +414,81 @@ class ExamRunner:
             
             if "config" in bank_dict and "bank" in bank_dict:
                 bundle = bank_dict
-                self.bank = Bank.from_dict(bundle["bank"])
+                normalized_bank = self._select_language_payload(bundle["bank"])
+                self.bank = Bank.from_dict(normalized_bank)
                 self.config = ExamConfig.from_dict(bundle["config"])
                 is_valid, err = self.config.validate()
                 if not is_valid:
                     raise ValueError(f"Invalid bundled config: {err}")
             else:
-                self.bank = Bank.from_dict(bank_dict)
+                normalized_bank = self._select_language_payload(bank_dict)
+                self.bank = Bank.from_dict(normalized_bank)
             return True
         
         except Exception as e:
             print(f"Error: Failed to load or decrypt the question bank.")
             print(f"Details: {e}")
             return False
+
+    def _resolve_bank_path(self, banks_dir: Path, bank_arg: str, language: str) -> Optional[Path]:
+        """
+        Resolve the final bank file to load, honoring language-specific suffixes.
+        """
+        direct_path = banks_dir / bank_arg
+        if direct_path.exists():
+            return direct_path
+
+        if "{lang}" in bank_arg:
+            placeholder = banks_dir / bank_arg.replace("{lang}", language)
+            if placeholder.exists():
+                return placeholder
+
+        bank_path = Path(bank_arg)
+        if bank_path.suffix:
+            return None
+
+        candidate_names = [
+            f"{bank_arg}-{language}.json",
+            f"{bank_arg}-{language}.enc",
+            f"{bank_arg}_{language}.json",
+            f"{bank_arg}_{language}.enc",
+        ]
+        for name in candidate_names:
+            candidate = banks_dir / name
+            if candidate.exists():
+                return candidate
+        return None
+    
+    def _select_language_payload(self, bank_dict: dict) -> dict:
+        """
+        Normalize bank files that may contain multiple language payloads.
+        When no language blocks are present, return the dict unchanged.
+        """
+        if not isinstance(bank_dict, dict):
+            return bank_dict
+
+        # Format A: {"languages": {"en": {...}, "fr": {...}}}
+        if "languages" in bank_dict:
+            lang_data = bank_dict["languages"].get(self.language)
+            if not lang_data:
+                raise ValueError(f"Language '{self.language}' not found in bank.")
+            return lang_data
+
+        # Format B: metadata + language keys at top level (e.g., "en": {...}, "fr": {...})
+        known_langs = {"en", "fr", "es", "de"}
+        available = known_langs.intersection(bank_dict.keys())
+        if available:
+            lang_data = bank_dict.get(self.language)
+            if not lang_data:
+                raise ValueError(f"Language '{self.language}' not found in bank.")
+            # Merge shared metadata (group, version, monitoring, etc.) with the language block
+            meta_keys = {"group", "version", "network_monitoring", "ai_detection"}
+            merged = {k: v for k, v in bank_dict.items() if k in meta_keys}
+            merged.update(lang_data)
+            return merged
+
+        # Legacy single-language file → return as-is
+        return bank_dict
     
     def authenticate_student(self) -> bool:
         """
@@ -416,19 +497,19 @@ class ExamRunner:
         Returns:
             True if successful, False otherwise
         """
-        print("\n" + "="*60)
-        print("STUDENT AUTHENTICATION")
-        print("="*60)
+        print("\n" + self._msg("header"))
+        print(self._msg("auth_header"))
+        print(self._msg("header"))
         
         try:
-            name = input("Enter your first name: ").strip()
+            name = input(self._msg("ask_name")).strip()
             if not name:
-                print("Error: First name cannot be empty.")
+                print(self._msg("name_error"))
                 return False
             
-            surname = input("Enter your surname: ").strip()
+            surname = input(self._msg("ask_surname")).strip()
             if not surname:
-                print("Error: Surname cannot be empty.")
+                print(self._msg("surname_error"))
                 return False
             
             # Create working directory: name_surname_TP_EVAL (lowercase)
@@ -439,11 +520,9 @@ class ExamRunner:
             
             # Check if directory exists
             if work_dir.exists():
-                print(f"\nWorking directory '{work_dir_name}' already exists.")
-                resume = input("Do you want to resume your previous session? (y/n): ").strip().lower()
-                
+                resume = input(self._msg("resume_prompt")).strip().lower()
                 if resume != 'y':
-                    print("Please remove the existing directory and try again.")
+                    print(self._msg("resume_abort"))
                     return False
             else:
                 work_dir.mkdir(exist_ok=True)
@@ -457,6 +536,7 @@ class ExamRunner:
                 work_dir=work_dir,
                 config=self.config
             )
+            self.session.grader.set_message_fn(self._msg)
             
             # Try to load existing assignment or create new one
             if not self.session.load_assignment():
@@ -470,20 +550,24 @@ class ExamRunner:
             algo_file = work_dir / "algorithm.txt"
             if not algo_file.exists():
                 with open(algo_file, 'w', encoding='utf-8') as f:
-                    f.write("# Algorithm Descriptions\n\n")
-                    f.write("Please describe your approach for each question below.\n\n")
+                    if self.language == 'fr':
+                        f.write("# Descriptions des algorithmes\n\n")
+                        f.write("Veuillez décrire votre approche pour chaque question ci-dessous.\n\n")
+                    else:
+                        f.write("# Algorithm Descriptions\n\n")
+                        f.write("Please describe your approach for each question below.\n\n")
                     for qn, task in self.session.assigned_tasks.items():
                         f.write(f"## {qn.upper()}: {task.title} ({task.id})\n\n")
-                        f.write("Your approach:\n\n\n")
+                        f.write("Votre approche:\n\n\n") if self.language == 'fr' else f.write("Your approach:\n\n\n")
             
-            print(f"\n✓ Authenticated as {surname}, {name}")
-            print(f"✓ Working directory: {work_dir}")
-            print(f"✓ Assigned tasks: {', '.join(task.id for task in self.session.assigned_tasks.values())}")
+            print(f"\n{self._msg('auth_success', surname=surname, name=name)}")
+            print(f"✓ {self._msg('workdir', path=work_dir)}")
+            print(f"✓ {self._msg('assigned', tasks=', '.join(task.id for task in self.session.assigned_tasks.values()))}")
 
             return True
         
         except (KeyboardInterrupt, EOFError):
-            print("\nAuthentication cancelled.")
+            print(self._msg("resume_cancel"))
             return False
         except Exception as e:
             print(f"Error during authentication: {e}")
@@ -540,8 +624,18 @@ class ExamRunner:
             "--config",
             help="Path to exam configuration file (default: config.json in executable directory)"
         )
+
+        parser.add_argument(
+            "--language",
+            choices=["prompt", "en", "fr"],
+            default="prompt",
+            help="Language for the interface and question bank (default: prompt the student)."
+        )
         
         args = parser.parse_args()
+
+        self.language = self._prompt_language()
+        self.messages = TRANSLATIONS[self.language]
         
         # Determine the executable/script directory
         if getattr(sys, 'frozen', False):
@@ -552,100 +646,102 @@ class ExamRunner:
             exe_dir = Path(__file__).parent.parent
         
         # Set bank path (relative to executable location)
-        self.bank_path = exe_dir / "banks" / args.bank
-        
-        # Check if bank file exists
-        if not self.bank_path.exists():
-            print(f"Error: Bank file '{self.bank_path}' not found.")
-            print(f"Expected location: {self.bank_path}")
-            print(f"Please ensure the 'banks' directory is in the same folder as the executable.")
+        banks_dir = exe_dir / "banks"
+        self.bank_path = self._resolve_bank_path(banks_dir, args.bank, self.language)
+
+        if not self.bank_path:
+            print(self._msg("language_error", bank=args.bank, lang=self.language))
+            print(self._msg("language_bank", banks_path=banks_dir))
+            print(self._msg("language_hint", lang=self.language))
             return 1
         
         # Get decryption key/password (moved before connectivity checks to load bank settings)
-        print("="*60)
-        print("OFFLINE PYTHON EXAM SYSTEM")
-        print("="*60)
+        print(self._msg("header"))
+        print(self._msg("title"))
+        print(self._msg("header"))
         
         key_input = None
         if self.bank_path.suffix.lower() != '.json':
             try:
-                key_input = getpass.getpass(f"Enter decryption password for {args.bank}: ")
+                key_input = getpass.getpass(self._msg("ask_enc_pass", bank=args.bank))
                 if not key_input:
-                    print("Error: Password cannot be empty.")
+                    print(self._msg("enc_error"))
                     return 1
             
                 # Strip whitespace
                 key_input = key_input.strip()
             except (KeyboardInterrupt, EOFError):
-                print("\nExiting.")
+                print(f"\n{self._msg('enc_exit')}")
                 return 1
         
         # Load bank
-        action = "Loading JSON" if self.bank_path.suffix.lower() == '.json' else "Loading and decrypting"
-        print(f"\n{action} question bank...")
+        action_en = "Loading JSON" if self.bank_path.suffix.lower() == '.json' else "Loading and decrypting"
+        action_fr = "Chargement JSON" if self.bank_path.suffix.lower() == '.json' else "Chargement et décryptage"
+        print(f"\n{action_fr} banque de questions...") if self.language == 'fr' else print(f"\n{action_en} question bank...")
         if not self.load_bank(key_input):
             return 1
         
         # Extract group name from the loaded bank
         self.group = self.bank.group
         
-        print("✓ Bank loaded successfully.")
-        print(f"✓ Group: {self.group}")
+        print(self._msg("bank_success"))
+        print(self._msg("bank_group", group=self.group))
+        print(f"{self._msg('language_confirm')}{'French' if self.language == 'fr' else 'English'}")
         
         # Check network monitoring settings from bank
         if self.bank.network_monitoring.enabled:
-            print(f"✓ Network monitoring: enabled (check interval: {self.bank.network_monitoring.check_interval_seconds}s)")
+            print(self._msg("network_on", interval=self.bank.network_monitoring.check_interval_seconds))
             
             # Check for internet connectivity before starting exam
-            print("\nChecking network connectivity...")
+            print(f"\n{self._msg('network_check')}")
             has_connectivity = check_internet_connectivity()
             if has_connectivity:
                 print("\n" + "!"*65)
-                print("NETWORK CONNECTION DETECTED!")
-                print("Please disconnect from the internet to start the exam.")
-                print("Close your browser, disable Wi-Fi, or unplug your network cable.")
-                print("Then restart the exam application.")
+                print(self._msg("network_detected"))
+                print(self._msg("network_instructions_1"))
+                print(self._msg("network_instructions_2"))
+                print(self._msg("network_instructions_3"))
                 print("!"*65)
                 return 1
             else:
-                print("✓ No internet connection detected. Exam can proceed.")
+                print(f"✓ {self._msg('network_ok')}")
         else:
-            print("✓ Network monitoring: disabled")
+            print(f"✓ {self._msg('network_off')}")
         
         # Check AI detection settings from bank
         if self.bank.ai_detection.enabled:
-            print(f"✓ AI detection: enabled (check interval: {self.bank.ai_detection.check_interval_seconds}s)")
+            print(f"✓ {self._msg('ai_on', interval=self.bank.ai_detection.check_interval_seconds)}")
 
             # Check for AI tools before starting exam
-            print("\nChecking for AI coding assistants...")
+            print(f"\n{self._msg('ai_check')}")
             ai_detected, ai_tools = check_ai_tools_at_startup()
             if ai_detected:
                 tool_list = ", ".join(ai_tools)
                 print("\n" + "!"*70)
-                print("⚠️  AI CODING ASSISTANTS DETECTED! ⚠️")
-                print(f"Detected tools: {tool_list}")
-                print("Please close all AI coding assistants before starting the exam.")
-                print("Common AI tools: GitHub Copilot, Tabnine, Cursor, Codeium, etc.")
-                print("Then restart the exam application.")
+                print(self._msg('ai_detected'))
+                print(self._msg('ai_detected_tools', tools=tool_list))
+                print(self._msg('ai_instructions_1'))
+                print(self._msg('ai_instructions_2'))
+                print(self._msg('ai_instructions_3'))
                 print("!"*70)
                 return 1
             else:
-                print("✓ No AI coding assistants detected.")
+                print(f"✓ {self._msg('ai_ok')}.")
         else:
-            print("✓ AI detection: disabled")
+            print(f"✓ {self._msg('ai_off')}")
         
         # Load exam configuration
         config_loaded_from_bundle = self.config is not None
         try:
             if config_loaded_from_bundle:
-                print("✓ Config loaded from encrypted bundle.")
+                print(f"✓ {self._msg('config_bundle')}")
             else:
                 config_path = Path(args.config) if args.config else None
                 self.config = load_config(config_path)
                 src = args.config if args.config else "config.json (default)"
-                print(f"✓ Config loaded: {src}")
+                print(f"✓ {self._msg('config_default', src=src)}")
         except ValueError as e:
-            print(f"Error loading configuration: {e}")
+            print(self._msg("config_error", error=e))
             return 1
 
         # Authenticate student
@@ -656,9 +752,9 @@ class ExamRunner:
 
         self.session.start_exam_timer()
         if self.config.exam_time_minutes == -1:
-            print("✓ Exam timer started: infinite time allowed")
+            print(f"✓ {self._msg('timer_infinite')}")
         else:
-            print(f"✓ Exam timer started: {self.config.exam_time_minutes} minutes allowed")
+            print(f"✓ {self._msg('timer_start', minutes=self.config.exam_time_minutes)}")
 
         # Start network monitoring if enabled
         if self.bank.network_monitoring.enabled:
@@ -739,8 +835,8 @@ class ExamRunner:
             # Log session finish
             self.session.log("SESSION_FINISH_TIMEOUT", f"Total Score: {self.session.get_total_score():.2f}")
             
-            print(f"Submission package '{zip_path.name}' created successfully.")
-            print("Your work is now locked. Thank you.")
+            print(self._msg('zip_submission', zip_name=zip_path.name))
+            print(self._msg('zip_submission_info'))
             
             self.session.is_finished = True
         except Exception as e:
@@ -761,10 +857,13 @@ class ExamRunner:
             
             code_file = Path(f"{qn}.py")
             if not code_file.exists():
-                print(f"Warning: {qn}.py not found, skipping submission")
+                if self.language == 'fr':
+                    print(f"Avertissement: {qn}.py introuvable, soumission ignorée")
+                else:
+                    print(f"Warning: {qn}.py not found, skipping submission")
                 continue
             
-            print(f"Auto-submitting {qn}...")
+            print(f"Soumission automatique {qn}...") if self.language == 'fr' else print(f"Auto-submitting {qn}...")
             
             # Run final test
             results = self.session.grader.grade_submission(task, str(code_file))
@@ -799,9 +898,11 @@ class ExamRunner:
             submitted_count += 1
         
         if submitted_count > 0:
-            print(f"Auto-submitted {submitted_count} question(s).")
+            if self.language == 'fr': print(f"{submitted_count} question(s) soumise(s) automatiquement.")
+            else: print(f"Auto-submitted {submitted_count} question(s).")
         else:
-            print("All questions were already submitted.")
+            if self.language == 'fr': print("Toutes les questions ont déjà été soumises.")
+            else: print("All questions were already submitted.")
     
     def _monitor_network_background(self):
         """Background network monitoring thread."""
@@ -830,10 +931,10 @@ class ExamRunner:
     def _handle_network_detected(self):
         """Handle when network connectivity is detected during exam."""
         print("\n" + "!"*60)
-        print("⚠️  NETWORK CONNECTION DETECTED DURING EXAM! ⚠️")
-        print("Please disconnect from the internet to continue.")
-        print("Close your browser, disable Wi-Fi, or unplug your network cable.")
-        print("The exam will resume automatically once you're offline.")
+        print(f"⚠️  {self._msg('network_detected_exam')} ⚠️")
+        print(self._msg("network_instructions_exam_1"))
+        print(self._msg("network_instructions_2"))
+        print(self._msg("network_instructions_exam_3"))
         print("!"*60)
         
         self.session.log("NETWORK_DETECTED", "Internet connection detected during exam - exam paused")
@@ -843,20 +944,20 @@ class ExamRunner:
         while check_internet_connectivity():
             wait_count += 1
             time.sleep(2)
-            print("Still detecting internet connection... please disconnect.")
+            print(self._msg("network_still_detected_exam"))
             # Log every 10 seconds of waiting
             if wait_count % 5 == 0:  # Every 10 seconds
                 self.session.log("NETWORK_WAITING", f"Still connected after {wait_count * 2} seconds")
         
-        print("\n✓ Network disconnected. Exam resuming...")
-        print("Press Enter to continue...")
+        print(f"\n✓ {self._msg('network_disconnected_exam')}")
+        print(self._msg("network_disconnected_con"))
         self.session.log("NETWORK_DISCONNECTED", "Internet connection removed - exam resumed")
     
     def command_loop(self):
         """Main interactive command loop."""
-        print("\n" + "="*60)
-        print("Type 'help' to see available commands.")
-        print("="*60 + "\n")
+        print("\n" + self._msg("header"))
+        print(self._msg("cmd_help_text"))
+        print(self._msg("header") + "\n")
 
         # Track file modification times for copy-paste detection
         self.file_mod_times = {}
@@ -874,8 +975,8 @@ class ExamRunner:
                 # Check if time has expired and show warning
                 if self.time_expired_warning_shown and not self.session.is_finished:
                     print("\n" + "!"*60)
-                    print("⚠️  EXAM TIME HAS EXPIRED! ⚠️")
-                    print("This is your LAST WARNING to save all changes!")
+                    print(self._msg("cmd_time_finish"))
+                    print(self._msg("cmd_time_finish_warning"))
                     print("!"*60)
                     
                     try:
@@ -895,7 +996,7 @@ class ExamRunner:
 
                 # Check if time has expired before each command
                 if self.session.is_time_expired():
-                    print("\n⚠️  Exam time finished!")
+                    print(f"\n{self._msg('cmd_time_finish')}")
                     self._auto_finish_exam()
                     break
 
@@ -923,22 +1024,22 @@ class ExamRunner:
                     self.cmd_show_question(command)
                 elif command == 'test':
                     if len(parts) < 2:
-                        print("Usage: test qN (e.g., 'test q1')")
+                        print(self._msg("cmd_test_usage"))
                     else:
                         self.cmd_test(parts[1].lower())
                 elif command == 'debug':
                     if len(parts) < 2:
-                        print("Usage: debug qN (e.g., 'debug q1')")
+                        print(self._msg("cmd_debug_usage"))
                     else:
                         self.cmd_debug(parts[1].lower())
                 elif command == 'hint':
                     if len(parts) < 2:
-                        print("Usage: hint qN (e.g., 'hint q1')")
+                        print(self._msg("cmd_hint_usage"))
                     else:
                         self.cmd_hint(parts[1].lower())
                 elif command == 'submit':
                     if len(parts) < 2:
-                        print("Usage: submit qN (e.g., 'submit q1')")
+                        print(self._msg("cmd_submit_usage"))
                     else:
                         self.cmd_submit(parts[1].lower())
                 elif command == 'status':
@@ -982,21 +1083,7 @@ class ExamRunner:
         """Display help message."""
         # Generate question list dynamically
         question_list = ", ".join([f"q{i+1}" for i in range(self.session.config.total_questions)])
-        
-        help_text = f"""
-Available commands:
-  {question_list}       Show your assigned prompts.
-  test qN          Run hidden tests for question N (e.g., 'test q1').
-  debug qN         Run tests with detailed error messages and output comparison.
-  hint qN          Show hints for question N.
-  submit qN        Submit your code for question N.
-  status           Show your current submission status and scores.
-  time             Show remaining exam time.
-  exit             Exit session and save progress (resume later).
-  finish           Finalize and package your submission.
-  help             Show this help message.
-"""
-        print(help_text)
+        print(self._msg("cmd_help", questions=question_list))
     
     def cmd_time(self):
         """Display remaining exam time."""
@@ -1004,65 +1091,84 @@ Available commands:
         elapsed_minutes = (datetime.now() - self.session.exam_start_time).total_seconds() / 60
         elapsed_formatted = f"{elapsed_minutes:.1f}"
         
-        print(f"\nExam Time Remaining: {remaining_time}")
+        print()
+        print(self._msg("cmd_time_heading", remaining=remaining_time))
         if self.config.exam_time_minutes == -1:
-            print(f"Elapsed: {elapsed_formatted} minutes")
+            print(self._msg("cmd_time_elapsed", elapsed=elapsed_formatted))
         else:
             total_minutes = self.config.exam_time_minutes
-            print(f"Elapsed: {elapsed_formatted} minutes out of {total_minutes} minutes")
+            print(self._msg("cmd_time_elapsed_total", elapsed=elapsed_formatted, total=total_minutes))
         
-        # Warning if less than 30 minutes left
         if self.session.exam_end_time is not None:
             remaining_minutes = self.session.get_remaining_time().total_seconds() / 60
             if remaining_minutes <= 30:
-                print("⚠️  Less than 30 minutes remaining!")
+                print(self._msg("cmd_time_warning", minutes=30))
         
         print()
     
     def cmd_show_question(self, qn: str):
         """Display the prompt for a question."""
-        task = self.session.assigned_tasks.get(qn)
-        if not task:
-            print(f"Error: {qn} is not a valid question.")
+        valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        if qn not in valid_questions:
+            print(self._msg("cmd_question_invalid", qn=qn, valid_questions=', '.join(valid_questions)))
             return
         
-        # Determine difficulty label
-        difficulty = "Easy" if task in self.bank.easy else ("Medium" if task in self.bank.medium else "Hard")
+        task = self.session.assigned_tasks.get(qn)
+        if not task:
+            print(self._msg("cmd_question_not_assigned", qn=qn))
+            return
         
-        print(f"\nQuestion {qn[-1]} ({difficulty}): {task.title}")
-        print(f"ID: {task.id}\n")
-        print("Prompt:")
-        print(task.prompt)
-        print(f"\nI/O Mode: {task.io.mode}")
-        
-        # Show visible sample if available
-        if task.visible_sample:
-            print("\nSample:")
-            if task.visible_sample.input:
-                print(f"Input:\n{task.visible_sample.input}")
-                print(f"Output:\n{task.visible_sample.output}")
-            elif task.visible_sample.args is not None:
-                is_sudoku = self._is_sudoku_question(task)
-                if is_sudoku and task.visible_sample.args:
-                    print("Arguments:")
-                    self._print_sudoku_board(task.visible_sample.args[0])
-                else: 
-                    print(f"Arguments: {task.visible_sample.args}")
-                print(f"Expected Return: {task.visible_sample.ret}")
-        
-        # Create code file if it doesn't exist
-        code_file = Path(f"{qn}.py")
-        if not code_file.exists():
-            self._create_code_file(qn, task)
-            print(f"\nA file '{qn}.py' has been created for you.")
+        if task in self.bank.easy:
+            difficulty = self._msg("difficulty_easy")
+        elif task in self.bank.medium:
+            difficulty = self._msg("difficulty_medium")
         else:
-            print(f"\nEdit your solution in '{qn}.py'.")
+            difficulty = self._msg("difficulty_hard")
         
         print()
-    
+        print(self._msg("cmd_show_heading", number=qn[1:], difficulty=difficulty, title=task.title))
+        print(self._msg("cmd_show_id", task_id=task.id))
+        print()
+        print(self._msg("cmd_show_prompt_label"))
+        print(task.prompt)
+        print()
+        print(self._msg("cmd_show_io_mode", mode=task.io.mode))
+        
+        if task.visible_sample:
+            print()
+            print(self._msg("cmd_show_sample_label"))
+            if task.visible_sample.input:
+                print(self._msg("cmd_show_sample_input"))
+                print(task.visible_sample.input)
+                print(self._msg("cmd_show_sample_output"))
+                print(task.visible_sample.output)
+            elif task.visible_sample.args is not None:
+                print(self._msg("cmd_show_sample_args"))
+                is_sudoku = self._is_sudoku_question(task)
+                if is_sudoku and task.visible_sample.args:
+                    self._print_sudoku_board(task.visible_sample.args[0])
+                else:
+                    print(task.visible_sample.args)
+                if task.visible_sample.ret is not None:
+                    print(self._msg("cmd_show_sample_ret", value=task.visible_sample.ret))
+        
+        code_file = Path(f"{qn}.py")
+        if not code_file.exists():
+            if self.language == 'fr':
+                self._create_code_file_fr(qn, task)
+            else:
+                self._create_code_file(qn, task)
+            print()
+            print(self._msg("cmd_show_question_1", qn=qn))
+        else:
+            print()
+            print(self._msg("cmd_show_question_2", qn=qn))
+        
+        print()
+
     def _is_sudoku_question(self, task) -> bool:
         """Check if a task is about Sudoku based on its content."""
-        sudoku_keywords = ["sudoku", "9×9 matrix", "9x9 matrix"]
+        sudoku_keywords = ["sudoku", "9x9 matrix", "9x9 matrix"]
         
         title_lower = task.title.lower()
         prompt_lower = task.prompt.lower()
@@ -1157,6 +1263,62 @@ Available commands:
         with open(f"{qn}.py", 'w', encoding='utf-8') as f:
             f.write("\n".join(code_lines))
     
+    def _create_code_file_fr(self, qn: str, task: Task):
+        """Create a starter code file for a question with prompt and sample in French."""
+        code_lines = []
+        
+        # Add header with question info
+        code_lines.append(f"# {task.title} ({task.id})")
+        code_lines.append("#" + "="*70)
+        code_lines.append("")
+        
+        # Add prompt as comments
+        code_lines.append("# PROMPT:")
+        for line in task.prompt.split('\n'):
+            code_lines.append(f"# {line}")
+        code_lines.append("")
+        
+        # Add sample if available
+        if task.visible_sample:
+            code_lines.append("# EXEMPLE:")
+            if task.visible_sample.input:
+                code_lines.append(f"# Entrée: {repr(task.visible_sample.input.rstrip())}")
+                code_lines.append(f"# Sortie: {repr(task.visible_sample.output.rstrip())}")
+            elif task.visible_sample.args is not None:
+                code_lines.append(f"# Arguments: {task.visible_sample.args}")
+                code_lines.append(f"# Rendement Attendu: {task.visible_sample.ret}")
+            code_lines.append("")
+        
+        code_lines.append("#" + "="*70)
+        code_lines.append("")
+        
+        # Add mode-specific template
+        if task.io.mode == "stdin_stdout":
+            code_lines.append("# Lire l'entrée depuis stdin et écrire la sortie vers stdout")
+            code_lines.append("# Utilisez input() pour lire et print() pour écrire.")
+            code_lines.append("")
+            code_lines.append("# Votre code ici")
+            code_lines.append("")
+        
+        elif task.io.mode == "function":
+            code_lines.append("# IMPORTANT: Ne modifiez pas le nom de la fonction!")
+            code_lines.append("")
+            
+            # Extract function signature from prompt if available
+            signature = self._extract_function_signature(task)
+            if signature:
+                code_lines.append(signature)
+            else:
+                # Fallback to basic template
+                code_lines.append(f"def {task.io.entrypoint}():")
+            
+            code_lines.append("    # Votre code ici")
+            code_lines.append("    pass")
+            code_lines.append("")
+        
+        with open(f"{qn}.py", 'w', encoding='utf-8') as f:
+            f.write("\n".join(code_lines))
+    
     def _extract_function_signature(self, task: Task) -> Optional[str]:
         """
         Extract function signature from task prompt.
@@ -1175,189 +1337,174 @@ Available commands:
     def cmd_test(self, qn: str):
         """Run tests for a question."""
         valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        question_list = ', '.join(valid_questions)
         if qn not in valid_questions:
-            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
+            print(self._msg("cmd_question_invalid", qn=qn, valid_questions=question_list))
             return
         
         task = self.session.assigned_tasks.get(qn)
         if not task:
-            print(f"Error: {qn} is not assigned.")
+            print(self._msg("cmd_question_not_assigned", qn=qn))
             return
         
         code_file = Path(f"{qn}.py")
         if not code_file.exists():
-            print(f"Error: File '{qn}.py' not found. Use '{qn}' command first to see the prompt.")
+            print(self._msg("cmd_question_missing_file", qn=qn))
             return
         
-        print(f"\nRunning {len(task.tests)} hidden tests for {qn}...\n")
+        print()
+        print(self._msg("cmd_test_running", count=len(task.tests), qn=qn))
+        print()
         
-        # Run grader
         results = self.session.grader.grade_submission(task, str(code_file))
-
-        # Track failed attempts for hint system
         if results['passed'] < results['total']:
-            if qn not in self.session.failed_attempts:
-                self.session.failed_attempts[qn] = 0
-            self.session.failed_attempts[qn] += 1
+            self.session.failed_attempts[qn] = self.session.failed_attempts.get(qn, 0) + 1
         
-        # Check if debug mode is enabled via environment variable
         show_details = os.environ.get('EXAM_DEBUG', '').lower() in ['1', 'true', 'yes']
-        
-        # Format and display results
         formatted_output = self.session.grader.format_test_results(results, show_details=show_details)
         print(formatted_output)
         
-        # Log test results
         self.session.log("TEST_RESULT", f"Question: {qn}, Passed: {results['passed']}/{results['total']}")
-        
         print()
-    
     def cmd_debug(self, qn: str):
         """Run tests with detailed error output for debugging."""
         valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        question_list = ', '.join(valid_questions)
         if qn not in valid_questions:
-            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
+            print(self._msg("cmd_question_invalid", qn=qn, valid_questions=question_list))
             return
         
         task = self.session.assigned_tasks.get(qn)
         if not task:
-            print(f"Error: {qn} is not assigned.")
+            print(self._msg("cmd_question_not_assigned", qn=qn))
             return
         
         code_file = Path(f"{qn}.py")
         if not code_file.exists():
-            print(f"Error: File '{qn}.py' not found. Use '{qn}' command first to see the prompt.")
+            print(self._msg("cmd_question_missing_file", qn=qn))
             return
         
-        print(f"\nRunning {len(task.tests)} hidden tests for {qn} (DEBUG MODE)...\n")
+        print()
+        print(self._msg("cmd_debug_running", count=len(task.tests), qn=qn))
+        print()
         
-        # Run grader
         results = self.session.grader.grade_submission(task, str(code_file))
-
-        # Track failed attempts for hint system
         if results['passed'] < results['total']:
-            if qn not in self.session.failed_attempts:
-                self.session.failed_attempts[qn] = 0
-            self.session.failed_attempts[qn] += 1
+            self.session.failed_attempts[qn] = self.session.failed_attempts.get(qn, 0) + 1
         
-        # Format and display results with details
         formatted_output = self.session.grader.format_test_results(results, show_details=True)
         print(formatted_output)
         
-        # Log debug test results
         self.session.log("DEBUG_TEST", f"Question: {qn}, Passed: {results['passed']}/{results['total']}")
-        
         print()
-    
     def cmd_hint(self, qn: str):
         """Display hints for a question based on progress."""
         valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        question_list = ', '.join(valid_questions)
         if qn not in valid_questions:
-            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
+            print(self._msg("cmd_question_invalid", qn=qn, valid_questions=question_list))
             return
 
         task = self.session.assigned_tasks.get(qn)
         if not task:
-            print(f"Error: {qn} is not assigned.")
+            print(self._msg("cmd_question_not_assigned", qn=qn))
             return
 
         if not task.hints:
-            print(f"\nNo hints available for {qn}.")
+            print()
+            print(self._msg("cmd_hint_none", qn=qn))
+            print()
             return
 
-        # Check if student has run tests for this question
         code_file = Path(f"{qn}.py")
         if not code_file.exists():
-            print(f"\nYou need to run tests for {qn} first to see your progress.")
-            print("Use 'test qN' or 'debug qN' to run tests and unlock hints based on your progress.")
+            print()
+            print(self._msg("cmd_hint_need_tests", qn=qn))
+            print(self._msg("cmd_hint_need_tests_help"))
+            print()
             return
 
-        # Run a quick test to get current pass rate
         results = self.session.grader.grade_submission(task, str(code_file))
         passed = results['passed']
         total = results['total']
-        pass_rate = passed / total if total > 0 else 0
+        pass_rate = passed / total if total > 0 else 0.0
 
-        # Determine hints to show based on pass rate
         if pass_rate >= 1.0:
-            print(f"\n🎉 Congratulations! You've passed all tests for {qn}.")
-            print("Since you've solved the problem completely, hints are not available.")
-            print("Great job demonstrating your understanding!")
+            print()
+            print(self._msg("cmd_hint_congrats_title", qn=qn))
+            print(self._msg("cmd_hint_congrats_body"))
+            print(self._msg("cmd_hint_congrats_body2"))
+            print()
             return
-        elif pass_rate >= 2/3:
+        elif pass_rate >= 2 / 3:
             max_hints = len(task.hints)
-        elif pass_rate >= 1/3:
+        elif pass_rate >= 1 / 3:
             max_hints = math.ceil(len(task.hints) / 2)
         else:
-            # No tests passed - require attempts for gradual hints
             attempts = self.session.failed_attempts.get(qn, 0)
             if attempts < 3:
-                print(f"\nHints for {qn} are not yet available.")
-                print(f"You haven't passed any tests yet. Make at least 3 test attempts first.")
-                print(f"Current attempts: {attempts}")
-                print("Keep trying and learning from the test results!")
+                print()
+                print(self._msg("cmd_hint_attempts_blocked", qn=qn))
+                print(self._msg("cmd_hint_attempts_need", attempts=3))
+                print(self._msg("cmd_hint_attempts_current", current=attempts))
+                print(self._msg("cmd_hint_keep_trying"))
+                print()
                 return
             max_hints = min(len(task.hints), attempts - 2)
 
-        print(f"\nHints for {qn} ({task.id}): {task.title}")
-        print(f"Progress: {passed}/{total} tests passed")
+        print()
+        print(self._msg("cmd_hint_header", qn=qn, task_id=task.id, title=task.title))
+        print(self._msg("cmd_hint_progress", passed=passed, total=total))
         print("=" * 50)
 
         for i in range(max_hints):
-            print(f"{i+1}. {task.hints[i]}")
+            print(f"{i + 1}. {task.hints[i]}")
 
         if max_hints < len(task.hints):
             remaining = len(task.hints) - max_hints
             if pass_rate == 0:
-                # Attempt-based system
-                if max_hints < len(task.hints):
-                    next_attempts = max_hints + 2  # Need 2 more attempts for next hint
-                    print(f"\n... {remaining} more hints available after {next_attempts} total attempts")
+                next_attempts = max_hints + 2
+                print()
+                print(self._msg("cmd_hint_more_attempts", remaining=remaining, next_attempts=next_attempts))
             elif max_hints == math.ceil(len(task.hints) / 2):
-                # Has first half, needs 2/3 for all hints
-                next_tests = math.ceil(2/3 * total)
-                print(f"\n... {remaining} more hints available after passing {next_tests}/{total} tests")
+                next_tests = math.ceil(2 / 3 * total)
+                print()
+                print(self._msg("cmd_hint_more_tests", remaining=remaining, next_tests=next_tests, total=total))
 
         print("=" * 50)
-        print("💡 Educational Note: Hints help guide your thinking, but solving independently")
-        print("   builds deeper understanding. Keep analyzing test failures!")
-
-        # Log hint usage
-        self.session.log("HINT_REQUEST", f"Question: {qn}, Progress: {passed}/{total}, Hints shown: {max_hints}")
-
+        print(self._msg("cmd_hint_footer_title"))
+        print(self._msg("cmd_hint_footer_body"))
         print()
-    
+
+        self.session.log("HINT_REQUEST", f"Question: {qn}, Progress: {passed}/{total}, Hints shown: {max_hints}")
     def cmd_submit(self, qn: str):
         """Submit code for a question."""
         valid_questions = [f'q{i+1}' for i in range(self.session.config.total_questions)]
+        question_list = ', '.join(valid_questions)
         if qn not in valid_questions:
-            print(f"Error: '{qn}' is not a valid question (use {', '.join(valid_questions)}).")
+            print(self._msg("cmd_question_invalid", qn=qn, valid_questions=question_list))
             return
         
         task = self.session.assigned_tasks.get(qn)
         if not task:
-            print(f"Error: {qn} is not assigned.")
+            print(self._msg("cmd_question_not_assigned", qn=qn))
             return
         
         code_file = Path(f"{qn}.py")
         if not code_file.exists():
-            print(f"Error: File '{qn}.py' not found. Use '{qn}' command first to see the prompt.")
+            print(self._msg("cmd_question_missing_file", qn=qn))
             return
         
-        print(f"\nSubmitting {qn}...")
+        print()
+        print(self._msg("cmd_submit_start", qn=qn))
         
-        # Run final test
         results = self.session.grader.grade_submission(task, str(code_file))
         
-        # Read code for SHA256
         with open(code_file, 'rb') as f:
             code_bytes = f.read()
         code_sha256 = hashlib.sha256(code_bytes).hexdigest()
-        
-        # Get max score for this task based on difficulty
         max_score = results.get("max_score", 0.0)
         
-        # Store submission
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.session.submissions[qn] = {
             "task_id": task.id,
@@ -1370,24 +1517,18 @@ Available commands:
             "timestamp": timestamp
         }
         
-        print(f"Final test run: {results['passed']}/{results['total']} passed. Score: {results['score']:.2f} / {max_score:.2f}.")
-        print("This result has been saved. You can submit again to overwrite.")
-        print("Please ensure your approach is described in 'algorithm.txt'.")
+        print(self._msg("cmd_submit_result", passed=results['passed'], total=results['total'], score=results['score'], max_score=max_score))
+        print(self._msg("cmd_submit_saved"))
+        print(self._msg("cmd_submit_reminder"))
         
-        # Save timer state after submission
         self.session.save_timer_state()
-
-        # Log submission
-        self.session.log(
-            "SUBMISSION",
-            f"Question: {qn}, Score: {results['score']:.2f}, Code SHA256: {code_sha256}"
-        )
-
+        self.session.log("SUBMISSION", f"Question: {qn}, Score: {results['score']:.2f}, Code SHA256: {code_sha256}")
         print()
-    
+
     def cmd_status(self):
         """Display submission status."""
-        print(f"\nStatus for {self.session.student_name}:")
+        print()
+        print(self._msg("cmd_status_header", student=self.session.student_name))
         
         for i in range(self.session.config.total_questions):
             qn = f"q{i+1}"
@@ -1398,18 +1539,20 @@ Available commands:
                 status_str = f"- {qn} ({task.id}): "
                 if sub:
                     max_score = sub.get('max_score', 0.0)
-                    status_str += f"Submitted | Score: {sub['score']:.2f} / {max_score:.2f} ({sub['passed']}/{sub['total']})"
+                    status_str += self._msg("cmd_status_submitted", score=sub['score'], max_score=max_score, passed=sub['passed'], total=sub['total'])
                 else:
-                    status_str += "Not submitted"
+                    status_str += self._msg("cmd_status_missing")
                 print(status_str)
         
-        print(f"\nTotal Score so far: {self.session.get_total_score():.2f} / {self.session.get_max_score():.2f}")
         print()
-    
+        print(self._msg("cmd_status_total", total_score=self.session.get_total_score(), max_score=self.session.get_max_score()))
+        print()
+
     def cmd_exit(self):
         """Exit the current exam session without finishing."""
-        print("\nExiting exam session. Your progress has been saved.")
-        print("You can resume later by running the exam again.")
+        print()
+        print(self._msg("cmd_exit_message"))
+        print(self._msg("cmd_exit_resume"))
         self.session.log("SESSION_EXIT", "User exited session - progress saved")
         self.session.is_finished = True
 
@@ -1417,34 +1560,32 @@ Available commands:
         """Finalize the exam and create submission package."""
         submitted_count = sum(1 for sub in self.session.submissions.values() if sub is not None)
 
-        print(f"\nYou have submissions for {submitted_count} out of {self.session.config.total_questions} questions.")
+        print()
+        print(self._msg("cmd_finish_summary", submitted_count=submitted_count, questions=self.session.config.total_questions))
 
         try:
-            confirm = input("Are you sure you want to finish and lock your work? (y/n): ").strip().lower()
+            confirm = input(self._msg("cmd_finish_confirm")).strip().lower()
             if confirm != 'y':
-                print("Cancelled. You can continue working.")
+                print(self._msg("cmd_finish_continue"))
                 return
         except (KeyboardInterrupt, EOFError):
-            print("\nCancelled.")
+            print()
+            print(self._msg("cmd_finish_cancel"))
             return
 
-        print("\nFinalizing...")
+        print()
+        print(self._msg("cmd_finish_processing"))
 
-        # Generate results file
         self.session.generate_results_file()
-
-        # Create submission ZIP
         zip_path = self.session.create_submission_zip()
 
-        # Clean up timer state file since exam is finished
         if self.session.timer_state_path.exists():
             self.session.timer_state_path.unlink()
 
-        # Log session finish
         self.session.log("SESSION_FINISH", f"Total Score: {self.session.get_total_score():.2f}")
 
-        print(f"Submission package '{zip_path.name}' created successfully.")
-        print("Your work is now locked. Thank you.")
+        print(self._msg('zip_submission', zip_name=zip_path.name))
+        print(self._msg('zip_submission_info'))
 
         self.session.is_finished = True
 
@@ -1457,4 +1598,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
