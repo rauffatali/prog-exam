@@ -47,14 +47,13 @@ class ExamSession:
     ):
         self.name = name
         self.surname = surname
-        self.student_name = f"{surname}, {name}"  # For display
+        self.student_name = f"{surname}, {name}"
         self.group = group
         self.bank = bank
         self.work_dir = work_dir
         self.config = config
         self.grader = Grader(config)
         
-        # Assigned tasks (populated by deterministic assignment)
         self.assigned_tasks: Dict[str, Task] = {}  # qN -> Task
         
         # Submission state - dynamic based on config
@@ -67,7 +66,7 @@ class ExamSession:
         self.assignment_path = work_dir / "assignment.json"
         self.results_path = work_dir / "results.txt"
         
-        # Track if session is finalized
+        # Track session
         self.is_finished = False
         
         # Track failed attempts
@@ -81,9 +80,6 @@ class ExamSession:
         self.exam_start_time: Optional[datetime] = None
         self.exam_end_time: Optional[datetime] = None
         self.timer_state_path = work_dir / "timer_state.json"
-
-        self.language: str = "en"
-        self.messages = TRANSLATIONS["en"]
     
     def log(self, event: str, details: str = ""):
         """Append an entry to the session log."""
@@ -98,7 +94,6 @@ class ExamSession:
     
     def start_exam_timer(self):
         """Start the exam timer when the exam begins, or resume from saved state."""
-        # Try to load existing timer state first
         if self.load_timer_state():
             # Successfully loaded existing timer state - resuming
             if self.exam_end_time is None:
@@ -109,7 +104,6 @@ class ExamSession:
             self.log("EXAM_RESUME", f"Exam resumed at {datetime.now().strftime('%H:%M:%S')}, {duration_log}")
             return
 
-        # No existing timer state - starting fresh
         self.exam_start_time = datetime.now()
         if self.config.exam_time_minutes == -1:
             self.exam_end_time = None  # No time limit
@@ -118,9 +112,7 @@ class ExamSession:
             self.exam_end_time = self.exam_start_time + timedelta(minutes=self.config.exam_time_minutes)
             duration_log = f"{self.config.exam_time_minutes} minutes"
 
-        # Save the timer state
         self.save_timer_state()
-
         self.log("EXAM_START", f"Exam started at {self.exam_start_time.strftime('%H:%M:%S')}, duration: {duration_log}")
     
     def get_remaining_time(self) -> timedelta:
@@ -177,11 +169,9 @@ class ExamSession:
             with open(self.timer_state_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            # Verify that the time configuration matches
             if data.get("exam_time_minutes") != self.config.exam_time_minutes:
                 return False
 
-            # Load the times
             self.exam_start_time = datetime.fromisoformat(data["exam_start_time"])
             exam_end_time_str = data.get("exam_end_time")
             if exam_end_time_str:
@@ -189,7 +179,6 @@ class ExamSession:
             else:
                 self.exam_end_time = None
 
-            # Check if time has already expired
             if self.is_time_expired():
                 return False
 
@@ -226,11 +215,9 @@ class ExamSession:
             with open(self.assignment_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # Verify name and surname match
             if data.get("name") != self.name or data.get("surname") != self.surname:
                 return False
             
-            # Load assigned tasks
             all_tasks = self.bank.get_all_tasks()
             assigned_task_ids = data.get("assigned_tasks", {})
             
@@ -261,7 +248,6 @@ class ExamSession:
         lines.append(f"Student: {self.student_name} | Group: {self.group} | Date: {datetime.now().strftime('%Y-%m-%d')}")
         lines.append(f"Assigned: {', '.join(task.id for task in self.assigned_tasks.values())}\n")
         
-        # Generate for all questions based on config
         for i in range(self.config.total_questions):
             qn = f"q{i+1}"
             task = self.assigned_tasks.get(qn)
@@ -300,23 +286,19 @@ class ExamSession:
     
     def create_submission_zip(self) -> Path:
         """Create the final submission ZIP file in root folder."""
-        # Sanitize name and surname for filename
         safe_name = "".join(c if c.isalnum() else '_' for c in self.name.upper())
         safe_surname = "".join(c if c.isalnum() else '_' for c in self.surname.upper())
         
         zip_filename = f"{safe_name}_{safe_surname}_{self.config.work_dir_postfix.upper()}.zip"
-        # Save in root folder (parent of work_dir)
         zip_path = self.work_dir.parent / zip_filename
-        
-        # Files to include
+
         files_to_zip = [
             "assignment.json",
             "session.log",
             "results.txt",
             "algorithm.txt"
         ]
-        
-        # Add qN.py files dynamically based on config
+
         for i in range(self.config.total_questions):
             code_file = f"q{i+1}.py"
             if (self.work_dir / code_file).exists():
@@ -342,9 +324,26 @@ class ExamRunner:
         self.config: Optional[ExamConfig] = None
         self.time_expired_warning_shown = False
 
+        self.language = "en"
+        self.messages = TRANSLATIONS["en"]
+
     def _msg(self, key: str, **kwargs) -> str:
         template = self.messages.get(key, key)
         return template.format(**kwargs)
+
+    def _prompt_language(self) -> str:
+        available = getattr(self, "available_languages", []) or []
+        if not available or (len(available) == 1 and available[0] == "en"):
+            return "en"
+
+        prompt_choices = "/".join(code.upper() for code in available)
+        prompt = self._msg("prompt_language", choices=prompt_choices)
+
+        while True:
+            choice = input(prompt).strip().lower()
+            if choice in available:
+                return choice
+            print(f"{self._msg('invalid_language')} {', '.join(available)}")
     
     def derive_key_from_password(self, password: str, salt: bytes) -> bytes:
         """Derive a Fernet key from a password using PBKDF2."""
@@ -356,17 +355,7 @@ class ExamRunner:
         )
         key_material = kdf.derive(password.encode('utf-8'))
         return base64.urlsafe_b64encode(key_material)
-
-    def _prompt_language(self) -> str:
-        prompt = TRANSLATIONS["en"]["prompt_language"]
-        while True:
-            choice = input(prompt).strip().lower()
-            if choice in ("en", "english", "e", "a", "anglais"):
-                return "en"
-            if choice in ("fr", "french", "f", "français"):
-                return "fr"
-            print(TRANSLATIONS["en"]["invalid_language"])
-        
+ 
     def load_bank(self, key_input: Optional[str]) -> bool:
         """
         Load and decrypt the question bank.
@@ -380,29 +369,27 @@ class ExamRunner:
             True if successful, False otherwise
         """
         try:
-            # Check if JSON file and load directly
             if self.bank_path.suffix.lower() == '.json':
                 with open(self.bank_path, 'r', encoding='utf-8') as f:
-                    bank_dict = json.load(f)
-                bank_dict = self._select_language_payload(bank_dict)
+                    raw_bank = json.load(f)
+                if self._bank_has_translations(raw_bank):
+                    self.available_languages = [k for k in raw_bank.keys() if k in TRANSLATIONS]
+                    self.language = self._prompt_language()
+                    self.messages = TRANSLATIONS[self.language]
+                bank_dict = self._select_language_payload(raw_bank)
                 self.bank = Bank.from_dict(bank_dict)
                 return True
 
             with open(self.bank_path, 'rb') as f:
                 encrypted_data = f.read()
             
-            # Check if password-based encryption (has SALT prefix)
             is_password_based = encrypted_data.startswith(b'SALT')
             
             if is_password_based:                
-                # Extract salt and actual encrypted data
                 salt = encrypted_data[4:20]  # 4-byte prefix + 16-byte salt
                 encrypted_data = encrypted_data[20:]
-                
-                # Derive key from password
                 key = self.derive_key_from_password(key_input, salt)
             else:
-                # Key file format - use input as-is (base64 encoded key)
                 try:
                     key = key_input.encode('utf-8')
                 except:
@@ -411,54 +398,60 @@ class ExamRunner:
             fernet = Fernet(key)
             decrypted_data = fernet.decrypt(encrypted_data)
             bank_dict = json.loads(decrypted_data)
-            
+
             if "config" in bank_dict and "bank" in bank_dict:
-                bundle = bank_dict
-                normalized_bank = self._select_language_payload(bundle["bank"])
-                self.bank = Bank.from_dict(normalized_bank)
-                self.config = ExamConfig.from_dict(bundle["config"])
+                raw_bank = bank_dict["bank"]
+            else:
+                raw_bank = bank_dict
+            
+            if self._bank_has_translations(raw_bank):
+                self.available_languages = [k for k in raw_bank.keys() if k in TRANSLATIONS]
+                self.language = self._prompt_language()
+                self.messages = TRANSLATIONS[self.language]
+            
+            normalized_bank, _ = self._select_language_payload(raw_bank)
+            self.bank = Bank.from_dict(normalized_bank)
+
+            if "config" in bank_dict and "bank" in bank_dict:
+                self.config = ExamConfig.from_dict(bank_dict["config"])
                 is_valid, err = self.config.validate()
                 if not is_valid:
                     raise ValueError(f"Invalid bundled config: {err}")
-            else:
-                normalized_bank = self._select_language_payload(bank_dict)
-                self.bank = Bank.from_dict(normalized_bank)
+
             return True
         
         except Exception as e:
             print(f"Error: Failed to load or decrypt the question bank.")
             print(f"Details: {e}")
             return False
+        
+    def _bank_has_translations(self, bank_dict: dict) -> bool:
+        if not isinstance(bank_dict, dict):
+            return False
+        return any(lang in bank_dict for lang in TRANSLATIONS.keys())
 
-    def _resolve_bank_path(self, banks_dir: Path, bank_arg: str, language: str) -> Optional[Path]:
+    def _resolve_bank_path(self, banks_dir: Path, bank_arg: str) -> Optional[Path]:
         """
-        Resolve the final bank file to load, honoring language-specific suffixes.
+        Resolve the bank file without language suffixes.
+        Accepts:
+          - exact filename (e.g., group1.json / group1.enc)
+          - base name (e.g., group1) → tries .json then .enc
         """
         direct_path = banks_dir / bank_arg
         if direct_path.exists():
             return direct_path
 
-        if "{lang}" in bank_arg:
-            placeholder = banks_dir / bank_arg.replace("{lang}", language)
-            if placeholder.exists():
-                return placeholder
-
         bank_path = Path(bank_arg)
         if bank_path.suffix:
             return None
 
-        candidate_names = [
-            f"{bank_arg}-{language}.json",
-            f"{bank_arg}-{language}.enc",
-            f"{bank_arg}_{language}.json",
-            f"{bank_arg}_{language}.enc",
-        ]
-        for name in candidate_names:
-            candidate = banks_dir / name
+        for ext in (".json", ".enc"):
+            candidate = banks_dir / f"{bank_arg}{ext}"
             if candidate.exists():
                 return candidate
+
         return None
-    
+
     def _select_language_payload(self, bank_dict: dict) -> dict:
         """
         Normalize bank files that may contain multiple language payloads.
@@ -467,21 +460,11 @@ class ExamRunner:
         if not isinstance(bank_dict, dict):
             return bank_dict
 
-        # Format A: {"languages": {"en": {...}, "fr": {...}}}
-        if "languages" in bank_dict:
-            lang_data = bank_dict["languages"].get(self.language)
-            if not lang_data:
-                raise ValueError(f"Language '{self.language}' not found in bank.")
-            return lang_data
-
-        # Format B: metadata + language keys at top level (e.g., "en": {...}, "fr": {...})
-        known_langs = {"en", "fr", "es", "de"}
-        available = known_langs.intersection(bank_dict.keys())
-        if available:
+        # Format: metadata + language keys at top level (e.g., "en": {...}, "fr": {...})
+        if any(lang in bank_dict for lang in TRANSLATIONS.keys()):
             lang_data = bank_dict.get(self.language)
             if not lang_data:
                 raise ValueError(f"Language '{self.language}' not found in bank.")
-            # Merge shared metadata (group, version, monitoring, etc.) with the language block
             meta_keys = {"group", "version", "network_monitoring", "ai_detection"}
             merged = {k: v for k, v in bank_dict.items() if k in meta_keys}
             merged.update(lang_data)
@@ -512,13 +495,12 @@ class ExamRunner:
                 print(self._msg("surname_error"))
                 return False
             
-            # Create working directory: name_surname_TP_EVAL (lowercase)
+            # Create working directory: name_surname_postfix (lowercase)
             safe_name = "".join(c if c.isalnum() else '_' for c in name.lower())
             safe_surname = "".join(c if c.isalnum() else '_' for c in surname.lower())
             work_dir_name = f"{safe_name}_{safe_surname}_{self.config.work_dir_postfix.upper()}"
             work_dir = Path.cwd() / work_dir_name
             
-            # Check if directory exists
             if work_dir.exists():
                 resume = input(self._msg("resume_prompt")).strip().lower()
                 if resume != 'y':
@@ -527,7 +509,6 @@ class ExamRunner:
             else:
                 work_dir.mkdir(exist_ok=True)
             
-            # Create session
             self.session = ExamSession(
                 name=name,
                 surname=surname,
@@ -538,27 +519,20 @@ class ExamRunner:
             )
             self.session.grader.set_message_fn(self._msg)
             
-            # Try to load existing assignment or create new one
             if not self.session.load_assignment():
                 self.assign_tasks()
                 self.session.save_assignment()
             
-            # Log session start
             self.session.log("SESSION_START", f"Student: {surname}, {name}, Group: {self.group}")
             
-            # Create algorithm.txt if it doesn't exist
             algo_file = work_dir / "algorithm.txt"
             if not algo_file.exists():
                 with open(algo_file, 'w', encoding='utf-8') as f:
-                    if self.language == 'fr':
-                        f.write("# Descriptions des algorithmes\n\n")
-                        f.write("Veuillez décrire votre approche pour chaque question ci-dessous.\n\n")
-                    else:
-                        f.write("# Algorithm Descriptions\n\n")
-                        f.write("Please describe your approach for each question below.\n\n")
+                    f.write(f"{self._msg('algo_desc')}\n\n")
+                    f.write(f"{self._msg('algo_desc_approach')}\n\n")
                     for qn, task in self.session.assigned_tasks.items():
                         f.write(f"## {qn.upper()}: {task.title} ({task.id})\n\n")
-                        f.write("Votre approche:\n\n\n") if self.language == 'fr' else f.write("Your approach:\n\n\n")
+                        f.write(f"{self._msg('algo_approach')}\n\n\n")
             
             print(f"\n{self._msg('auth_success', surname=surname, name=name)}")
             print(f"✓ {self._msg('workdir', path=work_dir)}")
@@ -582,30 +556,25 @@ class ExamRunner:
         seed = int(seed_hash, 16)
         random.seed(seed)
         
-        # Build list of tasks to assign based on config
         tasks_to_assign = []
-        
-        # Add easy tasks
+
         shuffled_easy = self.bank.easy.copy()
         random.shuffle(shuffled_easy)
         for i in range(self.config.easy_count):
             tasks_to_assign.append(("easy", shuffled_easy[i]))
         
-        # Add medium tasks
         shuffled_medium = self.bank.medium.copy()
         random.shuffle(shuffled_medium)
         for i in range(self.config.medium_count):
             tasks_to_assign.append(("medium", shuffled_medium[i]))
-        
-        # Add hard tasks
+
         shuffled_hard = self.bank.hard.copy()
         random.shuffle(shuffled_hard)
         for i in range(self.config.hard_count):
             tasks_to_assign.append(("hard", shuffled_hard[i]))
         
-        # Assign to question numbers
         self.session.assigned_tasks = {}
-        for i, (difficulty, task) in enumerate(tasks_to_assign):
+        for i, (_, task) in enumerate(tasks_to_assign):
             qn = f"q{i+1}"
             self.session.assigned_tasks[qn] = task
     
@@ -624,20 +593,9 @@ class ExamRunner:
             "--config",
             help="Path to exam configuration file (default: config.json in executable directory)"
         )
-
-        parser.add_argument(
-            "--language",
-            choices=["prompt", "en", "fr"],
-            default="prompt",
-            help="Language for the interface and question bank (default: prompt the student)."
-        )
         
         args = parser.parse_args()
-
-        self.language = self._prompt_language()
-        self.messages = TRANSLATIONS[self.language]
         
-        # Determine the executable/script directory
         if getattr(sys, 'frozen', False):
             # Running as compiled executable - banks/ should be next to .exe
             exe_dir = Path(sys.executable).parent
@@ -645,9 +603,8 @@ class ExamRunner:
             # Running as script - banks/ should be in project root
             exe_dir = Path(__file__).parent.parent
         
-        # Set bank path (relative to executable location)
         banks_dir = exe_dir / "banks"
-        self.bank_path = self._resolve_bank_path(banks_dir, args.bank, self.language)
+        self.bank_path = self._resolve_bank_path(banks_dir, args.bank)
 
         if not self.bank_path:
             print(self._msg("language_error", bank=args.bank, lang=self.language))
@@ -655,7 +612,6 @@ class ExamRunner:
             print(self._msg("language_hint", lang=self.language))
             return 1
         
-        # Get decryption key/password (moved before connectivity checks to load bank settings)
         print(self._msg("header"))
         print(self._msg("title"))
         print(self._msg("header"))
@@ -667,32 +623,25 @@ class ExamRunner:
                 if not key_input:
                     print(self._msg("enc_error"))
                     return 1
-            
-                # Strip whitespace
+                
                 key_input = key_input.strip()
             except (KeyboardInterrupt, EOFError):
                 print(f"\n{self._msg('enc_exit')}")
                 return 1
         
-        # Load bank
-        action_en = "Loading JSON" if self.bank_path.suffix.lower() == '.json' else "Loading and decrypting"
-        action_fr = "Chargement JSON" if self.bank_path.suffix.lower() == '.json' else "Chargement et décryptage"
-        print(f"\n{action_fr} banque de questions...") if self.language == 'fr' else print(f"\n{action_en} question bank...")
+        action = self._msg('bank_load_json') if self.bank_path.suffix.lower() == '.json' else self._msg('bank_load_enc')
+        print(f"\n{self._msg('load_bank', action=action)}")
         if not self.load_bank(key_input):
             return 1
         
-        # Extract group name from the loaded bank
         self.group = self.bank.group
         
         print(self._msg("bank_success"))
         print(self._msg("bank_group", group=self.group))
-        print(f"{self._msg('language_confirm')}{'French' if self.language == 'fr' else 'English'}")
+        print(f"{self._msg('language_confirm')}{self.messages.get('language_name', self.language)}")
         
-        # Check network monitoring settings from bank
         if self.bank.network_monitoring.enabled:
             print(self._msg("network_on", interval=self.bank.network_monitoring.check_interval_seconds))
-            
-            # Check for internet connectivity before starting exam
             print(f"\n{self._msg('network_check')}")
             has_connectivity = check_internet_connectivity()
             if has_connectivity:
@@ -708,11 +657,8 @@ class ExamRunner:
         else:
             print(f"✓ {self._msg('network_off')}")
         
-        # Check AI detection settings from bank
         if self.bank.ai_detection.enabled:
             print(f"✓ {self._msg('ai_on', interval=self.bank.ai_detection.check_interval_seconds)}")
-
-            # Check for AI tools before starting exam
             print(f"\n{self._msg('ai_check')}")
             ai_detected, ai_tools = check_ai_tools_at_startup()
             if ai_detected:
@@ -730,7 +676,6 @@ class ExamRunner:
         else:
             print(f"✓ {self._msg('ai_off')}")
         
-        # Load exam configuration
         config_loaded_from_bundle = self.config is not None
         try:
             if config_loaded_from_bundle:
@@ -744,7 +689,6 @@ class ExamRunner:
             print(self._msg("config_error", error=e))
             return 1
 
-        # Authenticate student
         if not self.authenticate_student():
             return 1
         
@@ -756,7 +700,7 @@ class ExamRunner:
         else:
             print(f"✓ {self._msg('timer_start', minutes=self.config.exam_time_minutes)}")
 
-        # Start network monitoring if enabled
+        # Start network monitoring
         if self.bank.network_monitoring.enabled:
             self.network_monitor_active = True
             self.network_thread = threading.Thread(
@@ -768,7 +712,7 @@ class ExamRunner:
             self.network_monitor_active = False
             self.network_thread = None
 
-        # Start AI monitoring if enabled
+        # Start AI monitoring
         if self.bank.ai_detection.enabled:
             self.ai_detector = AIDetector(session_logger=self.session.log)
             self.ai_detector.process_check_interval = self.bank.ai_detection.check_interval_seconds
@@ -778,7 +722,7 @@ class ExamRunner:
             self.ai_detector = None
             self.ai_monitor_active = False
 
-        # Start exam timer if enabled if time is not infinite
+        # Start exam timer
         if self.config.exam_time_minutes != -1:
             self.exam_timer_active = True
             self.exam_timer_thread = threading.Thread(
@@ -823,18 +767,10 @@ class ExamRunner:
     def _auto_finish_exam(self):
         """Automatically finish the exam when time expires."""
         try:
-            # Auto-submit all unsubmitted questions first
             self._auto_submit_all_questions()
-
-            # Generate results file
             self.session.generate_results_file()
-            
-            # Create submission ZIP
             zip_path = self.session.create_submission_zip()
-            
-            # Log session finish
             self.session.log("SESSION_FINISH_TIMEOUT", f"Total Score: {self.session.get_total_score():.2f}")
-            
             print(self._msg('zip_submission', zip_name=zip_path.name))
             print(self._msg('zip_submission_info'))
             
@@ -850,33 +786,24 @@ class ExamRunner:
         for i in range(self.session.config.total_questions):
             qn = f"q{i+1}"
             task = self.session.assigned_tasks.get(qn)
-            
-            # Skip if already submitted or no task assigned
             if not task or self.session.submissions.get(qn) is not None:
                 continue
             
             code_file = Path(f"{qn}.py")
             if not code_file.exists():
-                if self.language == 'fr':
-                    print(f"Avertissement: {qn}.py introuvable, soumission ignorée")
-                else:
-                    print(f"Warning: {qn}.py not found, skipping submission")
+                print(f"Warning: {qn}.py not found, skipping submission")
                 continue
             
-            print(f"Soumission automatique {qn}...") if self.language == 'fr' else print(f"Auto-submitting {qn}...")
-            
-            # Run final test
+            print(self._msg('auto_submit', qn=qn))
+
             results = self.session.grader.grade_submission(task, str(code_file))
             
-            # Read code for SHA256
             with open(code_file, 'rb') as f:
                 code_bytes = f.read()
             code_sha256 = hashlib.sha256(code_bytes).hexdigest()
             
-            # Get max score for this task
             max_score = results.get("max_score", 0.0)
             
-            # Store submission
             timestamp = datetime.now().strftime("%H:%M:%S")
             self.session.submissions[qn] = {
                 "task_id": task.id,
@@ -889,7 +816,6 @@ class ExamRunner:
                 "timestamp": timestamp
             }
             
-            # Log auto-submission
             self.session.log(
                 "AUTO_SUBMISSION",
                 f"Question: {qn}, Score: {results['score']:.2f}, Code SHA256: {code_sha256}"
@@ -898,11 +824,9 @@ class ExamRunner:
             submitted_count += 1
         
         if submitted_count > 0:
-            if self.language == 'fr': print(f"{submitted_count} question(s) soumise(s) automatiquement.")
-            else: print(f"Auto-submitted {submitted_count} question(s).")
+            print(self._msg('qn_auto_submit', submitted_count=submitted_count))
         else:
-            if self.language == 'fr': print("Toutes les questions ont déjà été soumises.")
-            else: print("All questions were already submitted.")
+            print(self._msg('qn_already_submit'))
     
     def _monitor_network_background(self):
         """Background network monitoring thread."""
@@ -980,16 +904,16 @@ class ExamRunner:
                     print("!"*60)
                     
                     try:
-                        response = input("\nHave you saved all your changes? Type 'yes' to continue: ").strip().lower()
+                        response = input("\n" + self._msg("auto_submit_questions")).strip().lower()
                         if response == 'yes':
-                            print("\nAuto-submitting all unsubmitted questions...")
+                            print("\n" + self._msg("auto_submit_all_unsubmitted"))
                             self._auto_finish_exam()
                         else:
-                            print("\nPlease save your changes first, then type 'yes'.")
+                            print("\n" + self._msg("auto_submit_save_first"))
                             self.time_expired_warning_shown = False
                             continue
                     except (KeyboardInterrupt, EOFError):
-                        print("\n\nAuto-submitting all questions and finishing exam...")
+                        print("\n\n" + self._msg("auto_submit_all_finish"))
                         self._auto_finish_exam()
                     
                     break
@@ -1047,10 +971,10 @@ class ExamRunner:
                 elif command == 'time':
                     self.cmd_time()
                 else:
-                    print(f"Unknown command: '{command}'. Type 'help' for a list of commands.")
+                    print(self._msg("cmd_unknown", command=command))
             
             except (KeyboardInterrupt, EOFError):
-                print("\nUse 'exit' to save progress or 'finish' to complete the exam.")
+                print("\n" + self._msg("cmd_exit_or_finish"))
             except Exception as e:
                 print(f"An unexpected error occurred: {e}")
                 self.session.log("ERROR", str(e))
@@ -1154,10 +1078,7 @@ class ExamRunner:
         
         code_file = Path(f"{qn}.py")
         if not code_file.exists():
-            if self.language == 'fr':
-                self._create_code_file_fr(qn, task)
-            else:
-                self._create_code_file(qn, task)
+            self._create_code_file(qn, task)
             print()
             print(self._msg("cmd_show_question_1", qn=qn))
         else:
@@ -1217,20 +1138,20 @@ class ExamRunner:
         code_lines.append("")
         
         # Add prompt as comments
-        code_lines.append("# PROMPT:")
+        code_lines.append(f"# {self._msg('codefile_prompt_label')}")
         for line in task.prompt.split('\n'):
             code_lines.append(f"# {line}")
         code_lines.append("")
         
         # Add sample if available
         if task.visible_sample:
-            code_lines.append("# SAMPLE:")
+            code_lines.append(f"# {self._msg('codefile_sample_label')}")
             if task.visible_sample.input:
-                code_lines.append(f"# Input: {repr(task.visible_sample.input.rstrip())}")
-                code_lines.append(f"# Output: {repr(task.visible_sample.output.rstrip())}")
+                code_lines.append(f"# {self._msg('codefile_input_label')} {repr(task.visible_sample.input.rstrip())}")
+                code_lines.append(f"# {self._msg('codefile_output_label')} {repr(task.visible_sample.output.rstrip())}")
             elif task.visible_sample.args is not None:
-                code_lines.append(f"# Arguments: {task.visible_sample.args}")
-                code_lines.append(f"# Expected Return: {task.visible_sample.ret}")
+                code_lines.append(f"# {self._msg('codefile_args_label')} {task.visible_sample.args}")
+                code_lines.append(f"# {self._msg('codefile_expected_return_label')} {task.visible_sample.ret}")
             code_lines.append("")
         
         code_lines.append("#" + "="*70)
@@ -1238,14 +1159,14 @@ class ExamRunner:
         
         # Add mode-specific template
         if task.io.mode == "stdin_stdout":
-            code_lines.append("# Read input from stdin and write output to stdout")
-            code_lines.append("# Use input() to read and print() to write")
+            code_lines.append(f"# {self._msg('codefile_stdin_header')}")
+            code_lines.append(f"# {self._msg('codefile_stdin_hint')}")
             code_lines.append("")
-            code_lines.append("# Your code here")
+            code_lines.append(f"# {self._msg('codefile_code_here')}")
             code_lines.append("")
         
         elif task.io.mode == "function":
-            code_lines.append("# IMPORTANT: Do not change the function name!")
+            code_lines.append(f"# {self._msg('codefile_fn_important')}")
             code_lines.append("")
             
             # Extract function signature from prompt if available
@@ -1256,63 +1177,7 @@ class ExamRunner:
                 # Fallback to basic template
                 code_lines.append(f"def {task.io.entrypoint}():")
             
-            code_lines.append("    # Your code here")
-            code_lines.append("    pass")
-            code_lines.append("")
-        
-        with open(f"{qn}.py", 'w', encoding='utf-8') as f:
-            f.write("\n".join(code_lines))
-    
-    def _create_code_file_fr(self, qn: str, task: Task):
-        """Create a starter code file for a question with prompt and sample in French."""
-        code_lines = []
-        
-        # Add header with question info
-        code_lines.append(f"# {task.title} ({task.id})")
-        code_lines.append("#" + "="*70)
-        code_lines.append("")
-        
-        # Add prompt as comments
-        code_lines.append("# PROMPT:")
-        for line in task.prompt.split('\n'):
-            code_lines.append(f"# {line}")
-        code_lines.append("")
-        
-        # Add sample if available
-        if task.visible_sample:
-            code_lines.append("# EXEMPLE:")
-            if task.visible_sample.input:
-                code_lines.append(f"# Entrée: {repr(task.visible_sample.input.rstrip())}")
-                code_lines.append(f"# Sortie: {repr(task.visible_sample.output.rstrip())}")
-            elif task.visible_sample.args is not None:
-                code_lines.append(f"# Arguments: {task.visible_sample.args}")
-                code_lines.append(f"# Rendement Attendu: {task.visible_sample.ret}")
-            code_lines.append("")
-        
-        code_lines.append("#" + "="*70)
-        code_lines.append("")
-        
-        # Add mode-specific template
-        if task.io.mode == "stdin_stdout":
-            code_lines.append("# Lire l'entrée depuis stdin et écrire la sortie vers stdout")
-            code_lines.append("# Utilisez input() pour lire et print() pour écrire.")
-            code_lines.append("")
-            code_lines.append("# Votre code ici")
-            code_lines.append("")
-        
-        elif task.io.mode == "function":
-            code_lines.append("# IMPORTANT: Ne modifiez pas le nom de la fonction!")
-            code_lines.append("")
-            
-            # Extract function signature from prompt if available
-            signature = self._extract_function_signature(task)
-            if signature:
-                code_lines.append(signature)
-            else:
-                # Fallback to basic template
-                code_lines.append(f"def {task.io.entrypoint}():")
-            
-            code_lines.append("    # Votre code ici")
+            code_lines.append(f"    # {self._msg('codefile_code_here')}")
             code_lines.append("    pass")
             code_lines.append("")
         

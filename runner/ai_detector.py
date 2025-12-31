@@ -25,23 +25,22 @@ class AIDetector:
         self.monitoring_active = False
         self.detection_thread = None
         
-        # Known AI coding assistants (process names)
+        # known AI coding assistants
         self.ai_processes = AI_PROCESSES
 
-        # Known LLM platforms and AI tools (process names)
+        # known LLM platforms and AI tools
         self.llm_processes = LLM_PROCESSES
 
-        # AI extension metadata (for enablement checks)
+        # AI extension metadata
         self.ai_extension_meta = AI_EXTENSION_META
 
-        # Detection state
         self.last_clipboard_content = ""
         self.clipboard_check_interval = 30  # seconds
         self.process_check_interval = 60    # seconds
         self.last_process_check = 0
         self.last_clipboard_check = 0
         
-        # Detection thresholds
+        # detection thresholds
         self.large_paste_threshold = 100  # characters
         self.suspicious_paste_count = 0
         self.max_suspicious_pastes = 3
@@ -76,22 +75,22 @@ class AIDetector:
             try:
                 current_time = time.time()
                 
-                # Check for AI processes periodically
+                # AI processes check periodically
                 if current_time - self.last_process_check >= self.process_check_interval:
                     self._check_ai_processes()
                     self.last_process_check = current_time
                 
-                # Check clipboard for suspicious activity
+                # suspicious activity check
                 if current_time - self.last_clipboard_check >= self.clipboard_check_interval:
-                    self._check_clipboard_activity() # check for suspicious large code pastes
+                    self._check_clipboard_activity() # suspicious large code pastes
                     self.last_clipboard_check = current_time
                 
-                time.sleep(5)  # Check every 5 seconds
+                time.sleep(5)
                 
             except Exception as e:
                 if self.session_logger:
                     self.session_logger("AI_MONITORING_ERROR", f"Monitoring error: {str(e)}")
-                time.sleep(10)  # Wait longer on errors
+                time.sleep(10)
     
     def _check_ai_processes(self):
         """Check for running AI coding assistant processes."""
@@ -108,7 +107,7 @@ class AIDetector:
             else:
                 running_ai_processes = self._check_processes_unix(target_processes)
             
-            # Also check IDE-integrated tools
+            # IDE-integrated tools check
             ide_detected, ide_tools = self.check_ide_ai_tools()
             if ide_detected:
                 running_ai_processes.extend(ide_tools)
@@ -124,7 +123,6 @@ class AIDetector:
         """Check for AI processes on Windows using tasklist."""
         running_processes = []
         try:
-            # Use tasklist command to get running processes
             result = subprocess.run(
                 ['tasklist', '/FO', 'CSV', '/NH'],
                 capture_output=True,
@@ -136,11 +134,10 @@ class AIDetector:
                 lines = result.stdout.strip().split('\n')
                 for line in lines:
                     if line.strip():
-                        # Parse CSV format: "process.exe","PID","Session","Mem Usage"
+                        # CSV format: "process.exe","PID","Session","Mem Usage"
                         parts = line.split('","')
                         if len(parts) >= 1:
                             process_name = parts[0].strip('"').lower()
-                            # Check if any target AI process matches
                             for ai_proc in target_processes:
                                 if ai_proc.lower() in process_name:
                                     running_processes.append(process_name)
@@ -162,13 +159,12 @@ class AIDetector:
             except ImportError:
                 pass
         
-        return list(set(running_processes))  # Remove duplicates
+        return list(set(running_processes))
     
     def _check_processes_unix(self, target_processes: List[str]) -> List[str]:
         """Check for AI processes on Unix-like systems using ps."""
         running_processes = []
         try:
-            # Use ps command to get process list
             result = subprocess.run(
                 ['ps', 'aux'],
                 capture_output=True,
@@ -178,7 +174,7 @@ class AIDetector:
             
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')
-                for line in lines[1:]:  # Skip header
+                for line in lines[1:]:
                     parts = line.split()
                     if len(parts) >= 11:  # Standard ps aux format
                         command_line = ' '.join(parts[10:]).lower()
@@ -208,7 +204,7 @@ class AIDetector:
             except ImportError:
                 pass
         
-        return list(set(running_processes))  # Remove duplicates
+        return list(set(running_processes))
     
     def _check_clipboard_activity(self):
         """Check clipboard for suspicious large code pastes."""
@@ -216,7 +212,7 @@ class AIDetector:
             clipboard_content = self._get_clipboard_content()
             if clipboard_content and clipboard_content != self.last_clipboard_content:
                 
-                # Check for large code-like content
+                # large code-like content check
                 if self._is_suspicious_paste(clipboard_content):
                     self.suspicious_paste_count += 1
                     
@@ -226,14 +222,12 @@ class AIDetector:
                                           f"Large code paste detected ({len(clipboard_content)} chars). "
                                           f"Count: {self.suspicious_paste_count}. Preview: {content_preview}")
                     
-                    # Alert if too many suspicious pastes
                     if self.suspicious_paste_count >= self.max_suspicious_pastes:
                         self._handle_excessive_suspicious_activity()
                 
                 self.last_clipboard_content = clipboard_content
                 
         except Exception as e:
-            # Silently handle clipboard errors (common on some systems)
             pass
     
     def _get_clipboard_content(self) -> Optional[str]:
@@ -265,7 +259,6 @@ class AIDetector:
                     return result.stdout
                     
             else:  # Linux and others
-                # Try xclip first (X11)
                 try:
                     result = subprocess.run(
                         ['xclip', '-o', '-selection', 'clipboard'],
@@ -278,7 +271,6 @@ class AIDetector:
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     pass
                 
-                # Try wl-clipboard (Wayland)
                 try:
                     result = subprocess.run(
                         ['wl-paste'],
@@ -301,7 +293,7 @@ class AIDetector:
         if len(content) < self.large_paste_threshold:
             return False
         
-        # Check for code-like patterns
+        # code-like patterns
         code_indicators = [
             'def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ',
             'try:', 'except:', 'with ', 'return ', 'print(', 'len(',
@@ -310,11 +302,7 @@ class AIDetector:
             '():', '[]', '{}', '==', '!=', '>=', '<=', '+=', '-=', '*=', '/=',
             'and ', 'or ', 'not ', 'True', 'False', 'None'
         ]
-        
-        # Count code indicators
         code_matches = sum(1 for indicator in code_indicators if indicator in content)
-        
-        # Consider it suspicious if it has multiple code indicators
         return code_matches >= 3
     
     def _handle_ai_processes_detected(self, processes: List[str]):
@@ -330,8 +318,7 @@ class AIDetector:
         
         if self.session_logger:
             self.session_logger("AI_PROCESS_DETECTED", f"AI processes found: {process_list}")
-        
-        # Wait for processes to be closed
+
         self._wait_for_ai_processes_closed(processes)
     
     def _wait_for_ai_processes_closed(self, target_processes: List[str]):
@@ -343,7 +330,6 @@ class AIDetector:
             wait_count += 1
             time.sleep(5)
             
-            # Recheck processes
             try:
                 if platform.system().lower() == "windows":
                     running = self._check_processes_windows(target_processes)
@@ -380,7 +366,7 @@ class AIDetector:
             self.session_logger("EXCESSIVE_SUSPICIOUS_ACTIVITY", 
                               f"Too many suspicious pastes ({self.suspicious_paste_count}) detected")
         
-        # Reset counter but keep monitoring
+        # reset counter
         self.suspicious_paste_count = 0
     
     def _get_vscode_extensions_via_cli(self, system: str) -> List[str]:
@@ -417,7 +403,6 @@ class AIDetector:
         # VS Code CLI
         cli_extensions = self._get_vscode_extensions_via_cli(system)
         if cli_extensions:
-            # Filter for AI extensions
             for ext in cli_extensions:
                 for ai_ext in self.ai_extension_meta.keys():
                     if ext.startswith(ai_ext):
@@ -446,7 +431,7 @@ class AIDetector:
         """Check globally disabled extensions from VS Code's state database."""
         disabled = set()
         
-        # Path to VS Code's global state database
+        # VS Code's global state database
         if system == "windows":
             db_path = os.path.expandvars(r"%APPDATA%\Code\User\globalStorage\state.vscdb")
         elif system == "darwin":
@@ -461,7 +446,7 @@ class AIDetector:
             import sqlite3
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            # Query for disabled extensions (stored as JSON)
+            # query for disabled extensions
             cursor.execute("SELECT value FROM ItemTable WHERE key = 'extensionsIdentifiers/disabled'")
             row = cursor.fetchone()
             if row:
@@ -486,14 +471,11 @@ class AIDetector:
         meta = self.ai_extension_meta[extension]
         global_disabled = self._check_vscode_global_disabled(system)
         
-        # If globally disabled, it's off
         if extension in global_disabled:
             return False, "Disabled globally"
         
-        # Load user settings
         settings = self._load_vscode_settings(system)
 
-        # Check specific settings
         if meta['settings_keys']:
             disabled_reasons = []
             enabled_details = []
@@ -551,7 +533,6 @@ class AIDetector:
         system = platform.system().lower()
         detected = []
         
-        # Check VS Code extensions
         vscode_extensions = self._check_vscode_extensions(system)
         if vscode_extensions:
             for ext in vscode_extensions:

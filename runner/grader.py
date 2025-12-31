@@ -144,11 +144,9 @@ class Grader:
         timeout_sec = task.time_limit_ms / 1000.0
         memory_limit_mb = task.memory_limit_mb
         
-        # Get checker function
         checker_name = task.checker or "exact_match"
         checker_func = self.checkers.get(checker_name, self._exact_match)
         
-        # Determine I/O mode
         if task.io.mode == "stdin_stdout":
             passed_count, results = self._grade_stdin_stdout(
                 task, code_path, timeout_sec, memory_limit_mb, checker_func
@@ -160,7 +158,6 @@ class Grader:
         else:
             results = [{"status": "error", "message": f"Unknown I/O mode: {task.io.mode}"}]
         
-        # Determine difficulty from task ID prefix
         difficulty = "medium"  # default
         if task.id.startswith("E"):
             difficulty = "easy"
@@ -169,7 +166,6 @@ class Grader:
         elif task.id.startswith("H"):
             difficulty = "hard"
         
-        # Get max score for this task based on difficulty and config
         max_score = self.config.get_difficulty_weight(difficulty)
         
         # Calculate score: max_score * (passed / total)
@@ -212,8 +208,7 @@ class Grader:
             )
             
             elapsed_ms = int((time.time() - start_time) * 1000)
-            
-            # Determine pass/fail
+
             is_correct = False
             result_status = status
             
@@ -229,15 +224,13 @@ class Grader:
             else:
                 result_status = "runtime_error"
             
-            # Store diagnostic info for debugging
             result_dict = {
                 "test_num": i,
                 "status": result_status,
                 "elapsed_ms": elapsed_ms,
                 "stderr": stderr if status != "success" else None
             }
-            
-            # Add student output and expected for failed tests (for debugging)
+
             if result_status == "failed":
                 result_dict["student_output"] = stdout
                 result_dict["expected_output"] = test_case.output
@@ -276,7 +269,6 @@ class Grader:
             
             elapsed_ms = int((time.time() - start_time) * 1000)
             
-            # Determine pass/fail
             is_correct = False
             result_status = status
             
@@ -294,7 +286,6 @@ class Grader:
             else:
                 result_status = "runtime_error"
             
-            # Store diagnostic info for debugging
             result_dict = {
                 "test_num": i,
                 "status": result_status,
@@ -302,11 +293,9 @@ class Grader:
                 "error": error_msg if status != "success" else None
             }
             
-            # Always keep function args for debugging so they show up for runtime errors too
             if test_case.args is not None:
                 result_dict["function_args"] = test_case.args
-            
-            # Add student output and expected for failed tests (for debugging)
+
             if result_status == "failed":
                 result_dict["student_output"] = return_value
                 result_dict["expected_output"] = test_case.ret

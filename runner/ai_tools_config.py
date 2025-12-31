@@ -4,7 +4,7 @@ AI Tools Configuration Module
 Contains lists of known AI processes and extensions for detection.
 """
 
-# Known AI coding assistants (process names)
+# AI coding assistants
 AI_PROCESSES = {
     'windows': [
         'github.copilot',
@@ -60,7 +60,7 @@ AI_PROCESSES = {
     ]
 }
 
-# Known LLM platforms and AI tools (process names)
+# LLM platforms and AI tools
 LLM_PROCESSES = {
     'windows': [
         'chatgpt',
@@ -151,7 +151,7 @@ LLM_PROCESSES = {
     ]
 }
 
-# AI extension metadata (for enablement checks)
+# AI extension metadata
 AI_EXTENSION_META = {
     'github.copilot': {
         'default_enabled': True,  # On by default
@@ -188,5 +188,4 @@ AI_EXTENSION_META = {
         'settings_keys': ['saoudrizwan.claude-dev.enable', 'saoudrizwan.claude-dev.editor.enableAutoCompletions'],
         'disable_values': [False, False]
     }
-    # Add more as needed
 }

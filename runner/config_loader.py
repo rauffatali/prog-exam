@@ -27,24 +27,18 @@ def load_config(config_path: Optional[Path] = None) -> ExamConfig:
         FileNotFoundError: If config file doesn't exist
         ValueError: If config is invalid
     """
-    # Determine default config path
     if config_path is None:
         if getattr(sys, 'frozen', False):
-            # Running as compiled executable
             exe_dir = Path(sys.executable).parent
         else:
-            # Running as script - use project root
             exe_dir = Path(__file__).parent.parent
         
         config_path = exe_dir / "config.json"
     
-    # Check if config file exists
     if not config_path.exists():
-        # Return default configuration if file doesn't exist
         print(f"Warning: Config file '{config_path}' not found. Using default configuration.")
         return ExamConfig.default()
     
-    # Load and parse config
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -52,11 +46,9 @@ def load_config(config_path: Optional[Path] = None) -> ExamConfig:
         raise ValueError(f"Invalid JSON in config file: {e}")
     except Exception as e:
         raise ValueError(f"Error reading config file: {e}")
-    
-    # Create config object
+
     config = ExamConfig.from_dict(data)
     
-    # Validate configuration
     is_valid, error_message = config.validate()
     if not is_valid:
         raise ValueError(f"Invalid configuration: {error_message}")

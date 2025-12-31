@@ -10,10 +10,8 @@ Tests the AI coding assistant detection functionality including:
 
 import pytest
 import time
-import platform
 import json
-import tempfile
-import os
+import platform
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
@@ -58,13 +56,25 @@ class TestAIDetectorInitialization:
         assert 'tabnine' in detector.ai_processes['linux']
         assert 'cursor' in detector.ai_processes['darwin']
     
-    def test_ai_websites_configured(self):
-        """Test that AI websites are properly configured."""
+    def test_llm_processes_configured(self):
+        """Test that LLM processes are properly configured for all platforms."""
         detector = AIDetector()
-        
-        assert 'chat.openai.com' in detector.ai_websites
-        assert 'claude.ai' in detector.ai_websites
-        assert 'github.com/copilot' in detector.ai_websites
+
+        assert 'windows' in detector.llm_processes
+        assert 'linux' in detector.llm_processes
+        assert 'darwin' in detector.llm_processes
+
+        # Check that common LLM tools are listed
+        assert 'chatgpt' in detector.llm_processes['windows']
+        assert 'claude' in detector.llm_processes['linux']
+        assert 'gemini' in detector.llm_processes['darwin']
+
+    def test_ai_extension_meta_configured(self):
+        """Test that AI extension metadata contains expected entries."""
+        detector = AIDetector()
+
+        assert 'github.copilot' in detector.ai_extension_meta
+        assert detector.ai_extension_meta['github.copilot']['settings_keys']
 
 
 class TestProcessDetectionWindows:
@@ -287,65 +297,88 @@ class Calculator:
 class TestIDEDetection:
     """Test IDE AI tool detection."""
     
+    @patch.object(AIDetector, '_get_vscode_extensions_via_cli')
     @patch('os.path.exists')
     @patch('os.listdir')
     @patch('platform.system')
-    def test_check_vscode_extensions_found(self, mock_platform, mock_listdir, mock_exists):
+    def test_check_vscode_extensions_found(self, mock_platform, mock_listdir, mock_exists, mock_cli):
         """Test detection of VS Code AI extensions."""
         mock_platform.return_value = 'Linux'
         mock_exists.return_value = True
+        mock_cli.return_value = []
         mock_listdir.return_value = [
             'github.copilot-1.0.0',
             'tabnine.tabnine-vscode-3.5.0',
             'ms-python.python-2023.1.0'
         ]
-        
+
         detector = AIDetector()
-        extensions = detector._check_vscode_extensions()
+        extensions = detector._check_vscode_extensions(platform.system().lower())
         
-        assert 'github.copilot' in extensions
-        assert 'tabnine.tabnine-vscode' in extensions
+        assert any(ext.startswith('github.copilot') for ext in extensions)
+        assert any(ext.startswith('tabnine.tabnine-vscode') for ext in extensions)
     
+    @patch.object(AIDetector, '_get_vscode_extensions_via_cli')
     @patch('os.path.exists')
-    def test_check_vscode_extensions_dir_not_exists(self, mock_exists):
+    def test_check_vscode_extensions_dir_not_exists(self, mock_exists, mock_cli):
         """Test when VS Code extensions directory doesn't exist."""
         mock_exists.return_value = False
+        mock_cli.return_value = []
         
         detector = AIDetector()
-        extensions = detector._check_vscode_extensions()
+        extensions = detector._check_vscode_extensions(platform.system().lower())
         
         assert len(extensions) == 0
     
-    @patch('os.path.exists')
-    @patch('builtins.open', create=True)
-    def test_check_vscode_copilot_enabled(self, mock_open, mock_exists):
-        """Test checking if Copilot is enabled in VS Code."""
-        mock_exists.return_value = True
-        
-        # Mock settings.json with Copilot enabled
-        settings = {
-            "github.copilot.enable": True,
-            "editor.fontSize": 14
-        }
-        mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(settings)
-        
-        with patch('json.load', return_value=settings):
-            detector = AIDetector()
-            enabled, details = detector._check_vscode_copilot_enabled()
-        
-        assert enabled
-        assert "Enabled" in details
-    
-    @patch('os.path.exists')
-    def test_check_vscode_copilot_settings_not_found(self, mock_exists):
-        """Test when VS Code settings file doesn't exist."""
-        mock_exists.return_value = False
-        
+    @patch.object(AIDetector, '_check_vscode_extensions')
+    def test_check_ide_ai_tools_none_detected(self, mock_extensions):
+        """Test IDE check returns false when no extensions found."""
+        mock_extensions.return_value = []
+
         detector = AIDetector()
-        enabled, details = detector._check_vscode_copilot_enabled()
-        
+        detected, tools = detector.check_ide_ai_tools()
+
+        assert detected is False
+        assert tools == []
+
+    @patch.object(AIDetector, '_check_vscode_extension_enabled')
+    @patch.object(AIDetector, '_check_vscode_extensions')
+    def test_check_ide_ai_tools_detected(self, mock_extensions, mock_enabled):
+        """Test IDE check returns true when an extension is enabled."""
+        mock_extensions.return_value = ['github.copilot']
+        mock_enabled.return_value = (True, "Enabled")
+
+        detector = AIDetector()
+        detected, tools = detector.check_ide_ai_tools()
+
+        assert detected is True
+        assert any("github.copilot" in tool for tool in tools)
+    
+    @patch.object(AIDetector, '_check_vscode_global_disabled')
+    @patch.object(AIDetector, '_load_vscode_settings')
+    def test_check_vscode_extension_enabled_default(self, mock_settings, mock_disabled):
+        """Test Copilot is enabled by default when settings are absent."""
+        mock_disabled.return_value = set()
+        mock_settings.return_value = {}
+
+        detector = AIDetector()
+        enabled, details = detector._check_vscode_extension_enabled('github.copilot', platform.system().lower())
+
+        assert enabled
+        assert "default enabled" in details
+
+    @patch.object(AIDetector, '_check_vscode_global_disabled')
+    @patch.object(AIDetector, '_load_vscode_settings')
+    def test_check_vscode_extension_enabled_explicitly_disabled(self, mock_settings, mock_disabled):
+        """Test Copilot is disabled when explicitly set to False."""
+        mock_disabled.return_value = set()
+        mock_settings.return_value = {"github.copilot.enable": False}
+
+        detector = AIDetector()
+        enabled, details = detector._check_vscode_extension_enabled('github.copilot', platform.system().lower())
+
         assert not enabled
-        assert "not found" in details
+        assert "explicitly disabled" in details
 
 
 class TestBackgroundMonitoring:
@@ -407,40 +440,6 @@ class TestBackgroundMonitoring:
         
         # Should have been called at least once
         assert mock_processes.call_count >= 1 or mock_clipboard.call_count >= 1
-
-
-class TestBrowserDetection:
-    """Test browser and AI website detection."""
-    
-    @patch('subprocess.run')
-    @patch('platform.system')
-    def test_check_browser_ai_activity_windows(self, mock_platform, mock_run):
-        """Test browser detection on Windows."""
-        mock_platform.return_value = 'Windows'
-        mock_run.return_value = Mock(
-            returncode=0,
-            stdout='"chrome.exe","1234","Console","100 MB"\n'
-        )
-        
-        detector = AIDetector()
-        result = detector.check_browser_ai_activity()
-        
-        assert result is True
-    
-    @patch('subprocess.run')
-    @patch('platform.system')
-    def test_check_browser_ai_activity_no_browser(self, mock_platform, mock_run):
-        """Test when no browser is running."""
-        mock_platform.return_value = 'Windows'
-        mock_run.return_value = Mock(
-            returncode=1,
-            stdout=''
-        )
-        
-        detector = AIDetector()
-        result = detector.check_browser_ai_activity()
-        
-        assert result is False
 
 
 class TestStartupCheck:

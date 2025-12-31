@@ -12,6 +12,7 @@ Each question bank is a single JSON file containing:
 - **25 total tasks**: 10 Easy, 10 Medium, 5 Hard
 - **15 test cases per task** (hidden from students during exam)
 - **Metadata**: time limits, memory limits, I/O modes, checkers
+- **(Optional) Multilingual content** via `en`, `fr`, etc.
 
 **Encryption:** Plaintext JSON is encrypted using **Fernet (AES-128-CBC with HMAC)** before distribution. Only encrypted `.enc` files are deployed to exam machines.
 
@@ -39,6 +40,70 @@ Each question bank is a single JSON file containing:
 }
 ```
 
+### Multilingual Format (Optional)
+
+If you want multiple languages in one bank file, keep the shared metadata at the top level
+and add one block per language. Each language block contains its own `difficulties`.
+
+```json
+{
+  "group": "group1",
+  "version": "2025.11.01",
+  "network_monitoring": { 
+    "enabled": false, 
+    "check_interval_seconds": 15 
+  },
+  "ai_detection": { 
+    "enabled": true, 
+    "check_interval_seconds": 60 
+  },
+  "en": { 
+    "difficulties": { 
+      "easy": [], 
+      "medium": [], 
+      "hard": [] 
+    }
+  },
+  "fr": { 
+    "difficulties": { 
+      "easy": [], 
+      "medium": [], 
+      "hard": [] 
+    } 
+  }
+}
+```
+
+### bank_test.json (Multilingual)
+
+`banks/bank_test.json` is a simple local bank for quick testing. To make it multilingual:
+1) Move the current top-level `difficulties` into an `en` block.
+2) Add a parallel `fr` block with translated `title`, `prompt`, and `hints`.
+3) Keep `group`, `version`, `network_monitoring`, and `ai_detection` at the top level.
+
+Minimal example:
+
+```json
+{
+  "group": "test",
+  "version": "2025.11.01-func",
+  "network_monitoring": { 
+    "enabled": false, 
+    "check_interval_seconds": 15 
+  },
+  "ai_detection": { 
+    "enabled": false, 
+    "check_interval_seconds": 60 
+  },
+  "en": { 
+    "difficulties": { "easy": [ ... ], "medium": [ ... ], "hard": [ ... ] } 
+  },
+  "fr": {
+    "difficulties": { "easy": [ ... ], "medium": [ ... ], "hard": [ ... ] } 
+  }
+}
+```
+
 ### Fields
 
 | Field | Type | Required | Description |
@@ -51,6 +116,9 @@ Each question bank is a single JSON file containing:
 | `difficulties.easy` | array | ✓ | Array of 20 Easy task objects |
 | `difficulties.medium` | array | ✓ | Array of 20 Medium task objects |
 | `difficulties.hard` | array | ✓ | Array of 20 Hard task objects |
+| `en` / `fr` / `etc.` | object | - | Optional language blocks (use instead of top-level `difficulties`) |
+| `en.difficulties` | object | - | English tasks (`easy`, `medium`, `hard`) |
+| `fr.difficulties` | object | - | French tasks (`easy`, `medium`, `hard`) |
 
 ### 2.1 Network Monitoring Configuration
 
@@ -474,4 +542,3 @@ Use `tools/verify.py` to enforce these rules:
 ---
 
 **END OF SPECIFICATION**
-

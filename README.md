@@ -1,7 +1,7 @@
 # Offline Python Exam System — Teacher Guide
 
-**Version:** 0.1.2  
-**Last Updated:** 2025-11-03  
+**Version:** 0.1.3  
+**Last Updated:** 2025-12-19
 **Target Audience:** Exam Teachers and Technical Staff
 
 ---
@@ -36,6 +36,11 @@
 - Python 3.10+ with virtual environment
 - Exam runner application
 - **(Optional)** Exam configuration file (`config.json`)
+
+**Multilingual banks (optional):**
+- Banks can include `en` / `fr` /  `etc.` blocks in a single JSON/ENC file.
+- If multiple language blocks exist, the app prompts the student to select a language.
+- If no language blocks exist, the bank is loaded as-is (no prompt).
 
 ---
 
@@ -95,6 +100,7 @@ python tools\verify.py --bank banks\bank_group1.enc --password
    python main.py --bank bank_test.json
    ```
    This tests the complete exam workflow using either encrypted or unencrypted question banks.
+   If `bank_test.json` contains `en`/`fr` blocks, the app will prompt for language selection.
 
 ---
 

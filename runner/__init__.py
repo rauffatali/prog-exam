@@ -7,6 +7,4 @@ This package contains the core components for running and grading student code:
 - grader: Test case execution and validation
 """
 
-__version__ = "1.2.0"
-
-
+__version__ = "1.3.0"

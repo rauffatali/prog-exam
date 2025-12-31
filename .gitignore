@@ -58,6 +58,7 @@ documentations/
 *_TP_EVAL/
 *_TP_TEST/
 *_TP_EXAM/
+TP/
 
 # Results and logs (if testing locally)
 results.txt

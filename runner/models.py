@@ -153,12 +153,10 @@ class Bank:
         """Create a Bank object from a dictionary."""
         difficulties = data['difficulties']
         
-        # Load network monitoring config if present
         network_config = NetworkMonitoringConfig.default()
         if 'network_monitoring' in data:
             network_config = NetworkMonitoringConfig.from_dict(data['network_monitoring'])
         
-        # Load AI detection config if present
         ai_config = AIDetectionConfig.default()
         if 'ai_detection' in data:
             ai_config = AIDetectionConfig.from_dict(data['ai_detection'])
@@ -230,25 +228,21 @@ class ExamConfig:
         Returns:
             Tuple of (is_valid, error_message)
         """
-        # Check if question counts sum to total
         if self.easy_count + self.medium_count + self.hard_count != self.total_questions:
             return False, f"Question counts don't match: {self.easy_count} + {self.medium_count} + {self.hard_count} != {self.total_questions}"
         
-        # Check if max points matches sum of weights
         calculated_max = (self.easy_count * self.easy_weight + 
                          self.medium_count * self.medium_weight + 
                          self.hard_count * self.hard_weight)
         
         if abs(calculated_max - self.max_points) > 0.01:
             return False, f"Max points ({self.max_points}) doesn't match calculated sum ({calculated_max})"
-        
-        # Check for non-negative values
+
         if any(x < 0 for x in [self.total_questions, self.easy_count, self.medium_count, 
                                 self.hard_count, self.easy_weight, self.medium_weight, 
                                 self.hard_weight, self.max_points]):
             return False, "All values must be non-negative"
         
-        # Check exam time is reasonable (at least 1 minute, max 8 hours)
         if self.exam_time_minutes != -1 and (self.exam_time_minutes < 1 or self.exam_time_minutes > 480):
             return False, "Exam time must be between 1 and 480 minutes (8 hours)"
         
@@ -276,7 +270,7 @@ class ExamConfig:
             medium_weight=5.0,
             hard_weight=5.0,
             max_points=15.0,
-            exam_time_minutes=120, # 2 hours
+            exam_time_minutes=120,
             work_dir_postfix='TP_EVAL'
         )
 

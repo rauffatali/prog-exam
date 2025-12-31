@@ -15,12 +15,10 @@ import shutil
 from pathlib import Path
 from typing import Tuple
 
-# Get the Python interpreter to use
+
 def get_python_executable():
     """Get the appropriate Python executable path."""
     if getattr(sys, 'frozen', False):
-        # Running as frozen executable (PyInstaller)
-        # sys.executable points to exam.exe, which is NOT a Python interpreter
         python_path = shutil.which('python')
         if not python_path:
             python_path = shutil.which('python3')
@@ -30,11 +28,6 @@ def get_python_executable():
         else:
             raise RuntimeError("Python executable not found. Please ensure Python is installed on the exam machines.")
     else:
-        # Running as normal Python script - use standard isolation
-        # Isolation flags for Python interpreter
-        # -I: Isolated mode (ignore PYTHONPATH, user site-packages, implies -E and -s)
-        # -B: Don't write .pyc files
-        # Note: We avoid -S (no site module) as it can cause compatibility issues across machines
         return sys.executable, ['-I', '-B']
 
 PYTHON_EXE, ISOLATION_FLAGS = get_python_executable()
@@ -59,36 +52,32 @@ def run_code_stdin_stdout(
         Tuple of (status, stdout, stderr)
         status: "success", "timeout", "runtime_error", "memory_error"
     """
-    # Create temporary directory for execution
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Copy student code to temp directory
         temp_code_path = Path(temp_dir) / Path(code_path).name
         shutil.copy(code_path, temp_code_path)
         
-        # Build command with appropriate Python executable
         command = [PYTHON_EXE, *ISOLATION_FLAGS, str(temp_code_path)]
         
         try:
-            # Platform-specific resource limiting
             if platform.system() != "Windows":
                 # Unix-like systems: use preexec_fn with resource limits
                 def set_limits():
                     try:
                         import resource
-                        # Set CPU time limit (seconds)
+                        # Set CPU time limit
                         try:
                             resource.setrlimit(resource.RLIMIT_CPU, (int(timeout_sec) + 1, int(timeout_sec) + 1))
                         except (ValueError, OSError):
-                            pass  # CPU limit not supported or failed
+                            pass
                         
-                        # Set memory limit (bytes) - may not work on macOS
+                        # Set memory limit (bytes)
                         try:
                             memory_bytes = memory_limit_mb * 1024 * 1024
                             resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
                         except (ValueError, OSError):
-                            pass  # Memory limit not supported on this system (e.g., macOS)
+                            pass
                     except ImportError:
-                        pass  # resource module not available
+                        pass
                 
                 proc = subprocess.run(
                     command,
@@ -113,7 +102,6 @@ def run_code_stdin_stdout(
             stdout = proc.stdout.decode('utf-8', errors='replace')
             stderr = proc.stderr.decode('utf-8', errors='replace')
             
-            # Check for memory errors in stderr
             if 'MemoryError' in stderr or 'memory' in stderr.lower():
                 return "memory_error", stdout, stderr
             
@@ -151,10 +139,8 @@ def run_code_function(
         Tuple of (status, return_value, error_message)
         status: "success", "timeout", "runtime_error", "memory_error", "import_error"
     """
-    # Get the student module name (without .py extension)
     student_module_name = Path(code_path).stem
-    
-    # Create a wrapper script that imports the student's code and calls the function
+
     wrapper_code = f"""
 import sys
 import json
@@ -189,42 +175,35 @@ except Exception as e:
     sys.exit(1)
 """
     
-    # Create temporary directory for execution
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Copy student code to temp directory
         temp_code_path = Path(temp_dir) / Path(code_path).name
         shutil.copy(code_path, temp_code_path)
         
-        # Write wrapper script
         wrapper_path = Path(temp_dir) / "__wrapper__.py"
         with open(wrapper_path, 'w', encoding='utf-8') as f:
             f.write(wrapper_code)
         
         input_json = json.dumps(args)
         
-        # Build command with appropriate Python executable
         command = [PYTHON_EXE, *ISOLATION_FLAGS, str(wrapper_path)]
         
         try:
-            # Platform-specific resource limiting
             if platform.system() != "Windows":
                 def set_limits():
                     try:
                         import resource
-                        # Set CPU time limit (seconds)
                         try:
                             resource.setrlimit(resource.RLIMIT_CPU, (int(timeout_sec) + 1, int(timeout_sec) + 1))
                         except (ValueError, OSError):
-                            pass  # CPU limit not supported or failed
-                        
-                        # Set memory limit (bytes) - may not work on macOS
+                            pass
+
                         try:
                             memory_bytes = memory_limit_mb * 1024 * 1024
                             resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
                         except (ValueError, OSError):
-                            pass  # Memory limit not supported on this system (e.g., macOS)
+                            pass 
                     except ImportError:
-                        pass  # resource module not available
+                        pass
                 
                 proc = subprocess.run(
                     command,
@@ -247,8 +226,7 @@ except Exception as e:
             
             stdout = proc.stdout.decode('utf-8', errors='replace')
             stderr = proc.stderr.decode('utf-8', errors='replace')
-            
-            # Parse result
+
             try:
                 result_data = json.loads(stdout)
                 
@@ -269,7 +247,6 @@ except Exception as e:
                 return "runtime_error", None, "Invalid response format"
             
             except json.JSONDecodeError:
-                # Check for memory errors
                 if 'MemoryError' in stderr or 'memory' in stderr.lower():
                     return "memory_error", None, "Memory limit exceeded"
                 return "runtime_error", None, f"Failed to parse output: {stdout[:200]}"
